@@ -4,3 +4,7 @@ target/
 .evidence-private/
 *.keypair.json
 *.log
+
+# Generated evidence (keep the directory, ignore collected artifacts)
+evidence/*
+!evidence/.gitkeep

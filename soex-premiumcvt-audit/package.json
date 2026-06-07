@@ -1,14 +1,15 @@
 {
   "name": "soex-premiumcvt-audit",
   "version": "1.0.0",
-  "description": "",
+  "description": "Local-first, read-only SOEX PremiumCVT bounty audit scaffold",
   "main": "index.js",
   "directories": {
     "test": "tests"
   },
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
-    "inventory": "tsx scripts/readonly_inventory.ts"
+    "inventory": "tsx scripts/readonly_inventory.ts",
+    "program-info": "tsx scripts/program_info.ts"
   },
   "keywords": [],
   "author": "",

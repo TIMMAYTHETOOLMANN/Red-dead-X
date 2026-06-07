@@ -1,6 +1,6 @@
 SHELL := /bin/bash
 
-.PHONY: verify safe-config inventory validator notes
+.PHONY: verify safe-config inventory program-info validator notes
 
 verify:
 	rustc --version
@@ -15,6 +15,9 @@ safe-config:
 
 inventory:
 	npm run inventory
+
+program-info:
+	npm run program-info
 
 validator:
 	solana-test-validator --reset
