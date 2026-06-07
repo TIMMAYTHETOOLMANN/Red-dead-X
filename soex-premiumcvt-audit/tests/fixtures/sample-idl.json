@@ -1,0 +1,43 @@
+{
+  "address": "PremiumCvt1111111111111111111111111111111111",
+  "metadata": { "name": "premiumcvt", "version": "0.1.0" },
+  "instructions": [
+    {
+      "name": "init_config",
+      "accounts": [
+        { "name": "config", "writable": true, "pda": { "seeds": [ { "kind": "const", "value": [99, 111, 110, 102, 105, 103] } ] } },
+        { "name": "admin", "writable": true },
+        { "name": "system_program", "address": "11111111111111111111111111111111" }
+      ],
+      "args": []
+    },
+    {
+      "name": "mint_cvt",
+      "accounts": [
+        { "name": "payer", "writable": true, "signer": true },
+        { "name": "community", "writable": false },
+        { "name": "cvt_mint", "writable": true },
+        { "name": "vault", "writable": true },
+        { "name": "token_program", "address": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA" }
+      ],
+      "args": [ { "name": "amount", "type": "u64" } ]
+    },
+    {
+      "name": "claim_rewards",
+      "accounts": [
+        { "name": "owner", "writable": false, "signer": true },
+        { "name": "reward_account", "writable": true, "pda": { "seeds": [ { "kind": "const", "value": "reward" }, { "kind": "arg", "path": "epoch" } ] } },
+        { "name": "referrer", "writable": true }
+      ],
+      "args": [ { "name": "epoch", "type": "u64" } ]
+    },
+    {
+      "name": "set_upgrade_authority",
+      "accounts": [
+        { "name": "program_data", "writable": true },
+        { "name": "new_authority", "writable": false }
+      ],
+      "args": []
+    }
+  ]
+}

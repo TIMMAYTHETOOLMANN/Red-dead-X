@@ -7,9 +7,13 @@
     "test": "tests"
   },
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1",
+    "test": "node --import tsx --test tests/*.test.ts",
+    "typecheck": "tsc --noEmit",
     "inventory": "tsx scripts/readonly_inventory.ts",
-    "program-info": "tsx scripts/program_info.ts"
+    "program-info": "tsx scripts/program_info.ts",
+    "analyze-idl": "tsx scripts/idl_analyze.ts",
+    "invariant-sim": "tsx scripts/invariant_sim.ts",
+    "poc": "tsx scripts/poc_harness.ts"
   },
   "keywords": [],
   "author": "",
@@ -20,6 +24,7 @@
     "dotenv": "^17.4.2"
   },
   "devDependencies": {
+    "@types/node": "^22.19.20",
     "tsx": "^4.22.4",
     "typescript": "^6.0.3"
   }
