@@ -1,3 +1,4 @@
+import crypto from "crypto";
 import {
   NormalizedAccount,
   NormalizedIdl,
@@ -29,11 +30,29 @@ export type Lane =
   | "C-token-custody"
   | "D-economic"
   | "E-referral"
-  | "F-upgrade-admin";
+  | "F-upgrade-admin"
+  | "G-cpi-program"
+  | "H-init-safety"
+  | "I-dos-compute"
+  | "X-correlation";
+
+/**
+ * Confidence that a candidate finding reflects a real, exploitable seam — as
+ * opposed to a benign-but-flag-worthy pattern. This is *separate* from severity
+ * (impact-if-true). Composite `risk` = severity weight × confidence weight, and
+ * is what we rank by so the highest-impact, highest-confidence leads float up.
+ */
+export type Confidence = "firm" | "likely" | "tentative";
 
 export interface Finding {
+  /** Stable fingerprint (see `fingerprint`) — survives across runs for baselining. */
+  id: string;
   lane: Lane;
   severity: Severity;
+  /** Likelihood the candidate is a real seam (distinct from severity/impact). */
+  confidence: Confidence;
+  /** Composite rank = severity weight × confidence weight (higher = hunt first). */
+  risk: number;
   instruction: string;
   account: string | null;
   title: string;
@@ -59,9 +78,66 @@ export interface AnalysisResult {
   matrix: MatrixRow[];
   severityCounts: Record<Severity, number>;
   laneCounts: Record<Lane, number>;
+  /** Highest composite risk present (0 when there are no findings). */
+  maxRisk: number;
 }
 
+/**
+ * What a lane emits before scoring. `confidence` is optional at the lane site
+ * (defaults to "likely"); `id` and `risk` are derived centrally so every lane
+ * stays focused on detection logic, not bookkeeping.
+ */
+export type RawFinding = Omit<Finding, "id" | "risk" | "confidence"> & {
+  confidence?: Confidence;
+};
+
 const SEVERITY_ORDER: Severity[] = ["critical", "high", "medium", "low", "info"];
+
+const SEVERITY_WEIGHT: Record<Severity, number> = {
+  critical: 5,
+  high: 4,
+  medium: 3,
+  low: 2,
+  info: 1,
+};
+
+const CONFIDENCE_WEIGHT: Record<Confidence, number> = {
+  firm: 3,
+  likely: 2,
+  tentative: 1,
+};
+
+/**
+ * Stable, content-addressed id for a finding so the same seam keeps the same id
+ * across runs. Deliberately excludes prose (title/detail) so wording tweaks do
+ * not churn baselines — identity is (lane, instruction, account).
+ */
+export function fingerprint(
+  lane: Lane,
+  instruction: string,
+  account: string | null,
+): string {
+  return crypto
+    .createHash("sha256")
+    .update(`${lane}\u0000${instruction}\u0000${account ?? ""}`)
+    .digest("hex")
+    .slice(0, 16);
+}
+
+/** Composite rank used for ordering: impact-if-true × likelihood-it-is-real. */
+export function riskScore(severity: Severity, confidence: Confidence): number {
+  return SEVERITY_WEIGHT[severity] * CONFIDENCE_WEIGHT[confidence];
+}
+
+function finalize(raw: RawFinding): Finding {
+  const confidence = raw.confidence ?? "likely";
+  return {
+    ...raw,
+    confidence,
+    id: fingerprint(raw.lane, raw.instruction, raw.account),
+    risk: riskScore(raw.severity, confidence),
+  };
+}
 
 // --- naming heuristics -----------------------------------------------------
 
@@ -86,6 +162,15 @@ const UPGRADE_RE =
 /** Numeric argument types worth simulating for overflow/rounding. */
 const NUMERIC_ARG_RE = /(u8|u16|u32|u64|u128|i8|i16|i32|i64|i128)/;
 
+/** Account names that imply a program account (a CPI target). */
+const PROGRAM_RE = /(_program$|^program$|_prog$|invoke|cpi)/i;
+
+/** Instruction names that create/initialize an account. */
+const INIT_RE = /(init|initialize|create|open|register|new_)/i;
+
+/** Arg types whose size the caller controls (unbounded → compute/DoS seam). */
+const UNBOUNDED_ARG_RE = /^(vec<|bytes$|string$)/i;
+
 function isProgramLike(account: NormalizedAccount): boolean {
   // System/sysvar/token programs are typically pinned by a fixed address.
   return account.hasAddress || /program|sysvar|rent|clock/i.test(account.name);
@@ -102,8 +187,8 @@ function seedSummary(account: NormalizedAccount): string {
 
 // --- lane logic ------------------------------------------------------------
 
-function laneAuthority(ix: NormalizedInstruction): Finding[] {
-  const findings: Finding[] = [];
+function laneAuthority(ix: NormalizedInstruction): RawFinding[] {
+  const findings: RawFinding[] = [];
   const privileged = PRIVILEGED_RE.test(ix.name);
   const anySigner = ix.accounts.some((a) => a.signer);
 
@@ -111,6 +196,7 @@ function laneAuthority(ix: NormalizedInstruction): Finding[] {
     findings.push({
       lane: "A-authority",
       severity: "high",
+      confidence: "firm",
       instruction: ix.name,
       account: null,
       title: "Privileged instruction has no signer",
@@ -132,6 +218,7 @@ function laneAuthority(ix: NormalizedInstruction): Finding[] {
       findings.push({
         lane: "A-authority",
         severity: "medium",
+        confidence: "likely",
         instruction: ix.name,
         account: acc.name,
         title: "Authority-like account is not a signer and is unbound",
@@ -148,8 +235,8 @@ function laneAuthority(ix: NormalizedInstruction): Finding[] {
   return findings;
 }
 
-function laneAccountSubstitution(ix: NormalizedInstruction): Finding[] {
-  const findings: Finding[] = [];
+function laneAccountSubstitution(ix: NormalizedInstruction): RawFinding[] {
+  const findings: RawFinding[] = [];
   for (const acc of ix.accounts) {
     if (isProgramLike(acc)) continue;
     if (acc.signer) continue; // a signer cannot be silently substituted
@@ -166,6 +253,7 @@ function laneAccountSubstitution(ix: NormalizedInstruction): Finding[] {
       findings.push({
         lane: "B-account-substitution",
         severity: "medium",
+        confidence: "likely",
         instruction: ix.name,
         account: acc.name,
         title: "Writable account has no PDA-seed or relation binding",
@@ -185,6 +273,7 @@ function laneAccountSubstitution(ix: NormalizedInstruction): Finding[] {
       findings.push({
         lane: "B-account-substitution",
         severity: "low",
+        confidence: "tentative",
         instruction: ix.name,
         account: acc.name,
         title: "PDA seed is derived from a caller-supplied argument",
@@ -201,8 +290,8 @@ function laneAccountSubstitution(ix: NormalizedInstruction): Finding[] {
   return findings;
 }
 
-function laneTokenCustody(ix: NormalizedInstruction): Finding[] {
-  const findings: Finding[] = [];
+function laneTokenCustody(ix: NormalizedInstruction): RawFinding[] {
+  const findings: RawFinding[] = [];
   for (const acc of ix.accounts) {
     if (!TOKEN_RE.test(acc.name)) continue;
     if (isProgramLike(acc)) continue;
@@ -214,6 +303,7 @@ function laneTokenCustody(ix: NormalizedInstruction): Finding[] {
       findings.push({
         lane: "C-token-custody",
         severity: "medium",
+        confidence: "likely",
         instruction: ix.name,
         account: acc.name,
         title: "Token/vault account is not bound by seeds or relations",
@@ -230,8 +320,8 @@ function laneTokenCustody(ix: NormalizedInstruction): Finding[] {
   return findings;
 }
 
-function laneEconomic(ix: NormalizedInstruction): Finding[] {
-  const findings: Finding[] = [];
+function laneEconomic(ix: NormalizedInstruction): RawFinding[] {
+  const findings: RawFinding[] = [];
   const numericArgs = ix.args.filter((a) => NUMERIC_ARG_RE.test(a.type));
   const touchesValue = ix.accounts.some(
     (a) => TOKEN_RE.test(a.name) && a.writable && !isProgramLike(a),
@@ -240,6 +330,7 @@ function laneEconomic(ix: NormalizedInstruction): Finding[] {
     findings.push({
       lane: "D-economic",
       severity: "low",
+      confidence: "tentative",
       instruction: ix.name,
       account: null,
       title: "Value-moving instruction takes numeric amounts",
@@ -256,8 +347,8 @@ function laneEconomic(ix: NormalizedInstruction): Finding[] {
   return findings;
 }
 
-function laneReferral(ix: NormalizedInstruction): Finding[] {
-  const findings: Finding[] = [];
+function laneReferral(ix: NormalizedInstruction): RawFinding[] {
+  const findings: RawFinding[] = [];
   for (const acc of ix.accounts) {
     if (!REFERRAL_RE.test(acc.name)) continue;
     const writableUnbound =
@@ -265,6 +356,7 @@ function laneReferral(ix: NormalizedInstruction): Finding[] {
     findings.push({
       lane: "E-referral",
       severity: writableUnbound ? "medium" : "info",
+      confidence: writableUnbound ? "likely" : "tentative",
       instruction: ix.name,
       account: acc.name,
       title: writableUnbound
@@ -283,13 +375,14 @@ function laneReferral(ix: NormalizedInstruction): Finding[] {
   return findings;
 }
 
-function laneUpgradeAdmin(ix: NormalizedInstruction): Finding[] {
-  const findings: Finding[] = [];
+function laneUpgradeAdmin(ix: NormalizedInstruction): RawFinding[] {
+  const findings: RawFinding[] = [];
   if (!UPGRADE_RE.test(ix.name)) return findings;
   const anySigner = ix.accounts.some((a) => a.signer);
   findings.push({
     lane: "F-upgrade-admin",
     severity: anySigner ? "medium" : "high",
+    confidence: anySigner ? "likely" : "firm",
     instruction: ix.name,
     account: null,
     title: anySigner
@@ -307,17 +400,205 @@ function laneUpgradeAdmin(ix: NormalizedInstruction): Finding[] {
   return findings;
 }
 
-const LANES: ((ix: NormalizedInstruction) => Finding[])[] = [
+// --- new deep lanes (G, H, I) ---------------------------------------------
+
+/**
+ * Lane G — CPI / arbitrary-program substitution.
+ *
+ * Solana programs that invoke another program (CPI) must pin that program's id.
+ * A program-like account that is NOT pinned by a fixed address (and is not a
+ * known sysvar) lets an attacker pass a malicious program of their own, turning
+ * a "trusted" CPI into attacker-controlled code (fake token program, fake
+ * metadata program, etc.).
+ */
+function laneCpiProgram(ix: NormalizedInstruction): RawFinding[] {
+  const findings: RawFinding[] = [];
+  for (const acc of ix.accounts) {
+    const looksLikeProgram = PROGRAM_RE.test(acc.name);
+    if (!looksLikeProgram) continue;
+    // A sysvar/rent/clock or a pinned address is fine — it cannot be substituted.
+    if (acc.hasAddress) continue;
+    if (/sysvar|rent|clock/i.test(acc.name)) continue;
+    // A program account that is also a signer/PDA is unusual but bound; skip.
+    if (acc.signer || hasSeeds(acc)) continue;
+
+    findings.push({
+      lane: "G-cpi-program",
+      severity: "high",
+      confidence: acc.relations.length === 0 ? "likely" : "tentative",
+      instruction: ix.name,
+      account: acc.name,
+      title: "CPI target program is not pinned to a fixed address",
+      detail:
+        `Program account \`${acc.name}\` in \`${ix.name}\` is used like a CPI target but ` +
+        `declares no fixed \`address\`. If the program id is not checked, an attacker can ` +
+        `pass a malicious program (fake token/metadata program) and execute arbitrary code ` +
+        `under the instruction's trust.`,
+      recommendation:
+        "Pin the program id (`address = <known program>`), or compare it in source against " +
+        "the expected constant before any `invoke`/`invoke_signed`.",
+    });
+  }
+  return findings;
+}
+
+/**
+ * Lane H — re-initialization / init safety.
+ *
+ * An `init`-style instruction whose target state account is not a checked PDA
+ * (no seeds, no pinned address, not a signer) can often be re-initialized or
+ * pointed at an arbitrary account, overwriting existing state (config takeover,
+ * reward-account reset, escrow reset).
+ */
+function laneInitSafety(ix: NormalizedInstruction): RawFinding[] {
+  if (!INIT_RE.test(ix.name)) return [];
+  const findings: RawFinding[] = [];
+  for (const acc of ix.accounts) {
+    if (!acc.writable) continue;
+    if (isProgramLike(acc)) continue;
+    if (acc.signer) continue;
+    if (/payer|funder/i.test(acc.name)) continue;
+    // A PDA (seeds) or relation-bound or pinned account is the safe shape.
+    if (hasSeeds(acc) || acc.hasAddress || acc.relations.length > 0) continue;
+
+    findings.push({
+      lane: "H-init-safety",
+      severity: "high",
+      confidence: "likely",
+      instruction: ix.name,
+      account: acc.name,
+      title: "Initialized account is not a checked PDA (re-init / overwrite risk)",
+      detail:
+        `Init-style instruction \`${ix.name}\` writes \`${acc.name}\`, which has no PDA seeds, ` +
+        `pinned address, or relation binding. Without an \`init\` (not \`init_if_needed\`) ` +
+        `constraint on a derived PDA, the account can be re-initialized or substituted, ` +
+        `overwriting live state.`,
+      recommendation:
+        "Use `#[account(init, seeds = [...], bump)]` so the address is derived and cannot be " +
+        "re-initialized; avoid `init_if_needed` unless the reset path is explicitly safe.",
+    });
+  }
+  return findings;
+}
+
+/**
+ * Lane I — DoS / compute exhaustion (local-only impact, per docs/01 lane F).
+ *
+ * Flags caller-controlled unbounded inputs (`vec<_>`, `bytes`, `string`) and
+ * unusually high account fan-out, both of which can blow the compute budget or
+ * trap funds via state that cannot be processed/resized.
+ */
+function laneDosCompute(ix: NormalizedInstruction): RawFinding[] {
+  const findings: RawFinding[] = [];
+  for (const arg of ix.args) {
+    if (UNBOUNDED_ARG_RE.test(arg.type)) {
+      findings.push({
+        lane: "I-dos-compute",
+        severity: "low",
+        confidence: "tentative",
+        instruction: ix.name,
+        account: null,
+        title: "Instruction takes a caller-sized unbounded argument",
+        detail:
+          `Instruction \`${ix.name}\` accepts \`${arg.name}: ${arg.type}\`, whose length the ` +
+          `caller controls. Without an explicit length cap, large inputs can exhaust the ` +
+          `compute budget or grow state unboundedly (local-only DoS, docs/01 lane F).`,
+        recommendation:
+          "Enforce a maximum length on the input and a bounded account size; reject oversized " +
+          "payloads before processing.",
+      });
+    }
+  }
+  // Account fan-out heuristic: many writable accounts loop = compute pressure.
+  const writableCount = ix.accounts.filter(
+    (a) => a.writable && !isProgramLike(a),
+  ).length;
+  if (writableCount >= 8) {
+    findings.push({
+      lane: "I-dos-compute",
+      severity: "info",
+      confidence: "tentative",
+      instruction: ix.name,
+      account: null,
+      title: "High writable-account fan-out",
+      detail:
+        `Instruction \`${ix.name}\` writes ${writableCount} non-program accounts. Wide fan-out ` +
+        `often implies per-account loops that can hit the compute budget at scale.`,
+      recommendation:
+        "Confirm per-account work is bounded and cannot be amplified by an attacker.",
+    });
+  }
+  return findings;
+}
+
+const LANES: ((ix: NormalizedInstruction) => RawFinding[])[] = [
   laneAuthority,
   laneAccountSubstitution,
   laneTokenCustody,
   laneEconomic,
   laneReferral,
   laneUpgradeAdmin,
+  laneCpiProgram,
+  laneInitSafety,
+  laneDosCompute,
 ];
 
+/**
+ * Cross-instruction correlation (whole-IDL pass).
+ *
+ * Per-instruction lanes cannot see that the *same* account name is a checked PDA
+ * in one instruction but an unbound writable in another. That inconsistency is a
+ * strong, low-noise signal: the developer clearly knows how to bind the account,
+ * so the unbound site is likely the real bug (account substitution / state
+ * confusion). This catches seams the per-instruction view structurally misses.
+ */
+function correlateAccounts(idl: NormalizedIdl): RawFinding[] {
+  interface Site {
+    instruction: string;
+    bound: boolean;
+    writable: boolean;
+  }
+  const byName = new Map<string, Site[]>();
+  for (const ix of idl.instructions) {
+    for (const acc of ix.accounts) {
+      if (isProgramLike(acc)) continue;
+      const bound = hasSeeds(acc) || acc.hasAddress || acc.relations.length > 0;
+      const sites = byName.get(acc.name) ?? [];
+      sites.push({ instruction: ix.name, bound, writable: acc.writable });
+      byName.set(acc.name, sites);
+    }
+  }
+
+  const findings: RawFinding[] = [];
+  for (const [name, sites] of byName) {
+    const boundSites = sites.filter((s) => s.bound);
+    const unboundWritable = sites.filter((s) => !s.bound && s.writable);
+    if (boundSites.length > 0 && unboundWritable.length > 0) {
+      for (const site of unboundWritable) {
+        findings.push({
+          lane: "X-correlation",
+          severity: "high",
+          confidence: "likely",
+          instruction: site.instruction,
+          account: name,
+          title: "Account is PDA/relation-bound elsewhere but unbound here",
+          detail:
+            `Account \`${name}\` is constrained (PDA seeds / pinned address / relations) in ` +
+            `[${boundSites.map((s) => `\`${s.instruction}\``).join(", ")}] but is a writable, ` +
+            `unbound account in \`${site.instruction}\`. The inconsistent constraint strongly ` +
+            `suggests a missing check at the unbound site.`,
+          recommendation:
+            "Apply the same binding used in the constrained instructions (seeds+bump or " +
+            "`has_one`/`address`) to this site, then test wrong-account substitution.",
+        });
+      }
+    }
+  }
+  return findings;
+}
+
 export function analyzeInstruction(ix: NormalizedInstruction): Finding[] {
-  return LANES.flatMap((lane) => lane(ix));
+  return LANES.flatMap((lane) => lane(ix)).map(finalize);
 }
 
 function buildMatrix(idl: NormalizedIdl): MatrixRow[] {
@@ -338,32 +619,46 @@ function buildMatrix(idl: NormalizedIdl): MatrixRow[] {
   return rows;
 }
 
-export function analyzeIdl(idl: NormalizedIdl): AnalysisResult {
-  const findings = idl.instructions.flatMap(analyzeInstruction);
-
-  const severityCounts = SEVERITY_ORDER.reduce(
-    (acc, s) => ({ ...acc, [s]: 0 }),
-    {} as Record<Severity, number>,
-  );
-  const laneCounts: Record<Lane, number> = {
+function emptyLaneCounts(): Record<Lane, number> {
+  return {
     "A-authority": 0,
     "B-account-substitution": 0,
     "C-token-custody": 0,
     "D-economic": 0,
     "E-referral": 0,
     "F-upgrade-admin": 0,
+    "G-cpi-program": 0,
+    "H-init-safety": 0,
+    "I-dos-compute": 0,
+    "X-correlation": 0,
   };
+}
+
+export function analyzeIdl(idl: NormalizedIdl): AnalysisResult {
+  const perInstruction = idl.instructions.flatMap(analyzeInstruction);
+  const correlated = correlateAccounts(idl).map(finalize);
+  const findings = [...perInstruction, ...correlated];
+
+  const severityCounts = SEVERITY_ORDER.reduce(
+    (acc, s) => ({ ...acc, [s]: 0 }),
+    {} as Record<Severity, number>,
+  );
+  const laneCounts = emptyLaneCounts();
   for (const f of findings) {
     severityCounts[f.severity] += 1;
     laneCounts[f.lane] += 1;
   }
 
-  // Sort findings by severity (critical first) for readable output.
+  // Rank by composite risk (severity × confidence) first, then severity, then
+  // instruction name for a stable, readable order.
   const sorted = [...findings].sort(
     (a, b) =>
+      b.risk - a.risk ||
       SEVERITY_ORDER.indexOf(a.severity) - SEVERITY_ORDER.indexOf(b.severity) ||
       a.instruction.localeCompare(b.instruction),
   );
+
+  const maxRisk = findings.reduce((m, f) => Math.max(m, f.risk), 0);
 
   return {
     program: idl.name,
@@ -373,11 +668,27 @@ export function analyzeIdl(idl: NormalizedIdl): AnalysisResult {
     matrix: buildMatrix(idl),
     severityCounts,
     laneCounts,
+    maxRisk,
   };
+}
+
+/**
+ * Baseline suppression: drop findings whose stable id appears in `baselineIds`.
+ * Lets a team accept reviewed-but-not-yet-fixed candidates so CI only surfaces
+ * *new* seams on subsequent runs. Returns the kept findings plus how many were
+ * suppressed.
+ */
+export function applyBaseline(
+  findings: Finding[],
+  baselineIds: Iterable<string>,
+): { kept: Finding[]; suppressed: number } {
+  const baseline = new Set(baselineIds);
+  const kept = findings.filter((f) => !baseline.has(f.id));
+  return { kept, suppressed: findings.length - kept.length };
 }
 
 export function severityRank(severity: Severity): number {
   return SEVERITY_ORDER.length - SEVERITY_ORDER.indexOf(severity);
 }
 
-export { SEVERITY_ORDER };
+export { SEVERITY_ORDER, SEVERITY_WEIGHT, CONFIDENCE_WEIGHT };

@@ -142,3 +142,161 @@ export function simulateInvariants(params: SimParams): InvariantIssue[] {
 
   return issues;
 }
+
+// --- advanced economic simulations (opt-in) --------------------------------
+
+export interface ReferralChainParams {
+  /** Reward basis points paid to each ancestor in the referral chain. */
+  rewardBps: bigint;
+  /** Direction rewards round (programs usually floor payouts). */
+  rounding: Rounding;
+  /** Depth of the referral chain to model. */
+  depth: number;
+  /** Base amount that triggers the per-ancestor reward. */
+  baseAmount: bigint;
+  /** Optional configured maximum total referral reward (per docs/02). */
+  maxTotalReward?: bigint;
+}
+
+export interface ReferralChainResult {
+  perLevel: bigint[];
+  totalPaid: bigint;
+  issues: InvariantIssue[];
+}
+
+/**
+ * Model the referral tree as a *payment graph* (docs/01 lane D): pay `rewardBps`
+ * of `baseAmount` to each of `depth` ancestors and check the two seams that
+ * actually pay out attackers — reward rounding-to-zero across a deep chain, and
+ * total referral reward exceeding the configured maximum.
+ */
+export function simulateReferralChain(
+  params: ReferralChainParams,
+): ReferralChainResult {
+  const { rewardBps, rounding, depth, baseAmount, maxTotalReward } = params;
+  const perLevel: bigint[] = [];
+  const issues: InvariantIssue[] = [];
+  let totalPaid = 0n;
+
+  for (let level = 0; level < depth; level++) {
+    const reward = computeFee(baseAmount, rewardBps, rounding);
+    perLevel.push(reward);
+    totalPaid += reward;
+  }
+
+  if (baseAmount > 0n && rewardBps > 0n && perLevel.some((r) => r === 0n)) {
+    issues.push({
+      severity: "low",
+      invariant: "per-level referral reward is non-zero for non-zero base",
+      detail:
+        `baseAmount=${baseAmount}, rewardBps=${rewardBps} → at least one chain level pays 0. ` +
+        `Deep chains at the dust boundary either silently drop rewards or, with the opposite ` +
+        `rounding, let a griefer farm rounding across many levels.`,
+      recommendation:
+        "Confirm rounding direction and enforce a minimum payable reward (or reject dust).",
+    });
+  }
+
+  if (maxTotalReward !== undefined && totalPaid > maxTotalReward) {
+    issues.push({
+      severity: "high",
+      invariant: "total_referral_reward <= configured_maximum",
+      detail:
+        `depth=${depth} pays total=${totalPaid}, exceeding the configured maximum ` +
+        `${maxTotalReward}. A deep/forged chain drains more than the protocol budgeted.`,
+      recommendation:
+        "Cap cumulative referral payout (and bound chain depth) with checked arithmetic.",
+    });
+  }
+
+  if (totalPaid > U64_MAX) {
+    issues.push({
+      severity: "medium",
+      invariant: "no u64 overflow on referral accumulation",
+      detail: `Cumulative referral reward ${totalPaid} exceeds u64::MAX.`,
+      recommendation: "Use checked_add when accumulating referral payouts.",
+    });
+  }
+
+  return { perLevel, totalPaid, issues };
+}
+
+export interface RoundTripParams {
+  feeBps: bigint;
+  feeRounding: Rounding;
+  /** Amounts to mint then immediately burn-to-recover. */
+  amounts: bigint[];
+}
+
+/**
+ * Mint→burn round-trip / dust-drain check (docs/02 edge case "burn immediately
+ * after mint"). For each amount we compute what a user gets back after the burn
+ * fee and flag the dust boundary where the fee rounds to zero: a user can mint
+ * and instantly burn-recover the *entire* value with no fee, repeatedly — a
+ * value leak / griefing seam against the fee invariant.
+ */
+export function simulateRoundTrip(params: RoundTripParams): InvariantIssue[] {
+  const { feeBps, feeRounding, amounts } = params;
+  const issues: InvariantIssue[] = [];
+  for (const value of amounts) {
+    if (value <= 0n || value > U64_MAX) continue;
+    const fee = computeFee(value, feeBps, feeRounding);
+    const recovered = value - fee;
+    if (feeBps > 0n && fee === 0n) {
+      issues.push({
+        severity: "medium",
+        invariant: "burn fee is charged on a mint→burn round-trip",
+        detail:
+          `value=${value}: mint then burn-recover returns ${recovered} with fee=${fee}. ` +
+          `At this dust boundary the protocol takes no fee on a full round-trip, so the ` +
+          `position can be opened and instantly unwound for free, repeatedly.`,
+        recommendation:
+          "Enforce a minimum fee (or minimum mint/burn amount) so round-trips cannot dodge " +
+          "the fee at the dust boundary.",
+      });
+    }
+    if (recovered > value) {
+      issues.push({
+        severity: "high",
+        invariant: "burn_recovered <= minted_value",
+        detail: `value=${value} → recovered=${recovered} exceeds the minted value.`,
+        recommendation: "Refund math is unsound; clamp recovery to value with checked math.",
+      });
+    }
+  }
+  return issues;
+}
+
+/**
+ * Fee monotonicity: a larger value must never pay a smaller absolute fee.
+ * A monotonicity break means a wealthier burn pays less, which (depending on
+ * rounding) can be gamed by splitting/merging amounts. Pure check over a sorted
+ * copy of the probe amounts.
+ */
+export function checkFeeMonotonicity(
+  amounts: bigint[],
+  bps: bigint,
+  rounding: Rounding,
+): InvariantIssue[] {
+  const sorted = [...amounts]
+    .filter((v) => v >= 0n && v <= U64_MAX)
+    .sort((a, b) => (a < b ? -1 : a > b ? 1 : 0));
+  const issues: InvariantIssue[] = [];
+  for (let i = 1; i < sorted.length; i++) {
+    const lo = sorted[i - 1];
+    const hi = sorted[i];
+    const feeLo = computeFee(lo, bps, rounding);
+    const feeHi = computeFee(hi, bps, rounding);
+    if (feeHi < feeLo) {
+      issues.push({
+        severity: "medium",
+        invariant: "fee is monotonic non-decreasing in value",
+        detail:
+          `fee(${hi})=${feeHi} < fee(${lo})=${feeLo}: a larger amount pays a smaller fee.`,
+        recommendation:
+          "Re-check fee rounding; ensure splitting/merging amounts cannot reduce total fee.",
+      });
+    }
+  }
+  return issues;
+}

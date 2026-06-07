@@ -32,10 +32,50 @@ What it flags (deep, structural seams, not surface noise):
   when they are writable and unbound.
 - **Lane F — upgrade/admin:** authority/upgrade-change instructions, escalated
   when no signer is enforced.
+- **Lane G — CPI / arbitrary program:** program-like accounts used as CPI targets
+  that are **not pinned** to a fixed address (attacker can pass a malicious
+  program — fake token/metadata program — and run arbitrary code under the
+  instruction's trust).
+- **Lane H — init safety:** `init`-style instructions whose target state account
+  is **not a checked PDA** (re-initialization / overwrite — config takeover,
+  reward-account reset).
+- **Lane I — DoS / compute:** caller-sized unbounded args (`vec<_>`, `bytes`,
+  `string`) and high writable-account fan-out (compute-budget exhaustion,
+  local-only DoS).
+- **Lane X — cross-instruction correlation:** an account that is PDA/relation-bound
+  in one instruction but a writable **unbound** account in another. The developer
+  clearly knows how to bind it, so the unbound site is a high-signal candidate.
+
+### Scoring, fingerprints, and ranking
+
+Every finding now carries:
+
+- **`severity`** — impact-if-true (critical…info).
+- **`confidence`** — likelihood the candidate is a real seam (`firm`/`likely`/`tentative`),
+  distinct from severity.
+- **`risk`** — composite rank = severity weight × confidence weight. Findings are
+  sorted by descending `risk` so the highest-impact, highest-confidence leads
+  float to the top. `maxRisk` summarizes the run.
+- **`id`** — a stable 16-hex fingerprint over `(lane, instruction, account)` that
+  survives across runs (prose changes do not churn it).
+
+### CI integration: SARIF, baselines, and severity gating
+
+```bash
+# Emit SARIF (evidence/idl-analysis-*.sarif) alongside JSON/Markdown for code-scanning.
+IDL_PATH=./targets/premiumcvt.json npm run analyze-idl
+
+# Suppress already-reviewed findings via a baseline (JSON array of ids, or one id per line).
+BASELINE_PATH=./targets/baseline.json npm run analyze-idl
+
+# Gate CI: exit non-zero when any finding at or above the threshold survives the baseline.
+FAIL_ON=high npm run analyze-idl
+```
 
 It normalizes both the legacy (`isMut`/`isSigner`) and modern
 (`writable`/`signer`/`pda`) Anchor IDL shapes. Output: `evidence/idl-analysis-*.json`
-(machine-readable) and `evidence/idl-analysis-*.md` (findings table + matrix).
+(machine-readable, includes `activeFindings` after baseline), `evidence/idl-analysis-*.sarif`
+(code-scanning), and `evidence/idl-analysis-*.md` (findings table + matrix).
 
 ```bash
 IDL_PATH=./targets/premiumcvt.json npm run analyze-idl
@@ -55,6 +95,21 @@ Configure (pin from source before trusting output):
 ```bash
 FEE_BPS=500 FEE_ROUNDING=floor SUPPLY_CAP=10000 \
   PROBE_AMOUNTS=0,1,2,19,100,1000,u64max npm run invariant-sim
+```
+
+In addition to the base battery, the simulator now also runs (pure `BigInt`):
+
+- **Mint→burn round-trip / dust drain** — flags amounts where the burn fee rounds
+  to zero, so a position can be opened and instantly unwound for free, repeatedly.
+- **Fee monotonicity** — a larger value must never pay a smaller absolute fee.
+- **Deep referral-chain reward simulation** (opt-in) — models the referral tree as
+  a payment graph: per-level rounding-to-zero, total reward exceeding the
+  configured maximum, and u64 overflow on accumulation.
+
+```bash
+# Referral-chain simulation: pay REFERRAL_REWARD_BPS to REFERRAL_DEPTH ancestors.
+FEE_BPS=500 REFERRAL_DEPTH=8 REFERRAL_REWARD_BPS=100 \
+  REFERRAL_BASE_AMOUNT=1000 REFERRAL_MAX_TOTAL=500 npm run invariant-sim
 ```
 
 Output: `evidence/invariant-sim-*.json`.

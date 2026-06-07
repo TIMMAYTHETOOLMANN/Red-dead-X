@@ -11,10 +11,15 @@ Everything lives in [`soex-premiumcvt-audit/`](./soex-premiumcvt-audit).
 - **Read-only collectors** — `npm run inventory` (known accounts) and `npm run program-info`
   (program + upgrade authority metadata). No transactions.
 - **Deep analysis toolset** (see `soex-premiumcvt-audit/docs/05-deep-analysis.md`):
-  - `npm run analyze-idl` — static IDL analyzer that walks every instruction through all six lanes,
-    ranks candidate findings by severity, and auto-builds the instruction/account matrix.
-  - `npm run invariant-sim` — economic invariant simulator (exact u64 math: fee rounding, overflow,
-    value conservation, supply cap).
+  - `npm run analyze-idl` — static IDL analyzer that walks every instruction through
+    **ten** lanes (authority, account-substitution, token-custody, economic, referral,
+    upgrade/admin, CPI/arbitrary-program, init-safety, DoS/compute, and cross-instruction
+    correlation), ranks candidates by composite **risk** (severity × confidence), assigns
+    stable fingerprints, and emits JSON + Markdown + **SARIF**. Supports baseline
+    suppression (`BASELINE_PATH`) and CI severity gating (`FAIL_ON`).
+  - `npm run invariant-sim` — economic invariant simulator (exact u64 math: fee rounding,
+    overflow, value conservation, supply cap, mint→burn round-trip / dust drain, fee
+    monotonicity, and deep referral-chain reward simulation).
   - `npm run poc` — guardrailed PoC harness ("hands"): simulates by default, and only sends on
     localnet/devnet when `EXECUTE=true ALLOW_TX=true`. Mainnet sends are always refused.
   - `npm test` / `npm run typecheck` — tests for the pure-logic analyzers and a full TypeScript pass.
