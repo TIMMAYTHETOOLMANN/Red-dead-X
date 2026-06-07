@@ -1,0 +1,3 @@
+# Add one known public key per line.
+# Example:
+# 11111111111111111111111111111111
