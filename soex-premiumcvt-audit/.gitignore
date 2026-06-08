@@ -5,6 +5,10 @@ target/
 *.keypair.json
 *.log
 
+# .NET build artifacts (dotnet/ThirdwebForensics)
+[Bb]in/
+[Oo]bj/
+
 # Generated evidence (keep the directory, ignore collected artifacts)
 evidence/*
 !evidence/.gitkeep
