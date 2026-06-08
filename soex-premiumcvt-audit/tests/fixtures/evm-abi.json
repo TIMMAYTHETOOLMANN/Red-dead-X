@@ -1,0 +1,14 @@
+[
+  { "type": "function", "name": "owner", "stateMutability": "view", "inputs": [], "outputs": [{ "name": "", "type": "address" }] },
+  { "type": "function", "name": "mint", "stateMutability": "nonpayable", "inputs": [{ "name": "to", "type": "address" }, { "name": "amount", "type": "uint256" }], "outputs": [] },
+  { "type": "function", "name": "upgradeToAndCall", "stateMutability": "payable", "inputs": [{ "name": "newImplementation", "type": "address" }, { "name": "data", "type": "bytes" }], "outputs": [] },
+  { "type": "function", "name": "execute", "stateMutability": "payable", "inputs": [{ "name": "target", "type": "address" }, { "name": "data", "type": "bytes" }], "outputs": [{ "name": "", "type": "bytes" }] },
+  { "type": "function", "name": "permit", "stateMutability": "nonpayable", "inputs": [{ "name": "owner", "type": "address" }, { "name": "spender", "type": "address" }, { "name": "value", "type": "uint256" }, { "name": "v", "type": "uint8" }, { "name": "r", "type": "bytes32" }, { "name": "s", "type": "bytes32" }], "outputs": [] },
+  { "type": "function", "name": "withdraw", "stateMutability": "nonpayable", "inputs": [{ "name": "amount", "type": "uint256" }], "outputs": [] },
+  { "type": "function", "name": "approve", "stateMutability": "nonpayable", "inputs": [{ "name": "spender", "type": "address" }, { "name": "amount", "type": "uint256" }], "outputs": [{ "name": "", "type": "bool" }] },
+  { "type": "function", "name": "swap", "stateMutability": "nonpayable", "inputs": [{ "name": "amountIn", "type": "uint256" }, { "name": "minOut", "type": "uint256" }], "outputs": [] },
+  { "type": "function", "name": "kill", "stateMutability": "nonpayable", "inputs": [], "outputs": [] },
+  { "type": "event", "name": "Transfer", "anonymous": false, "inputs": [{ "name": "from", "type": "address", "indexed": true }, { "name": "to", "type": "address", "indexed": true }, { "name": "value", "type": "uint256", "indexed": false }] },
+  { "type": "fallback", "stateMutability": "payable" },
+  { "type": "receive", "stateMutability": "payable" }
+]

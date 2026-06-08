@@ -13,7 +13,10 @@
     "program-info": "tsx scripts/program_info.ts",
     "analyze-idl": "tsx scripts/idl_analyze.ts",
     "invariant-sim": "tsx scripts/invariant_sim.ts",
-    "poc": "tsx scripts/poc_harness.ts"
+    "poc": "tsx scripts/poc_harness.ts",
+    "evm-recon": "tsx scripts/evm_recon.ts",
+    "surface-map": "tsx scripts/surface_map.ts",
+    "forensic-scan": "tsx scripts/forensic_scan.ts"
   },
   "keywords": [],
   "author": "",
@@ -21,7 +24,8 @@
   "type": "commonjs",
   "dependencies": {
     "@solana/web3.js": "^1.98.4",
-    "dotenv": "^17.4.2"
+    "dotenv": "^17.4.2",
+    "thirdweb": "^5.120.0"
   },
   "devDependencies": {
     "@types/node": "^22.19.20",

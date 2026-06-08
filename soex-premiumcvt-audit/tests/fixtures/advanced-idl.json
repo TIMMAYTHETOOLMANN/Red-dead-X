@@ -1,0 +1,39 @@
+{
+  "address": "PremiumCvt1111111111111111111111111111111111",
+  "metadata": { "name": "premiumcvt-advanced", "version": "0.1.0" },
+  "instructions": [
+    {
+      "name": "init_config",
+      "accounts": [
+        { "name": "config", "writable": true, "pda": { "seeds": [ { "kind": "const", "value": "config" } ] } },
+        { "name": "admin", "writable": true, "signer": true }
+      ],
+      "args": []
+    },
+    {
+      "name": "update_config",
+      "accounts": [
+        { "name": "config", "writable": true, "signer": false },
+        { "name": "admin", "writable": false, "signer": true }
+      ],
+      "args": []
+    },
+    {
+      "name": "swap_via_cpi",
+      "accounts": [
+        { "name": "payer", "writable": true, "signer": true },
+        { "name": "vault", "writable": true, "pda": { "seeds": [ { "kind": "const", "value": "vault" } ] } },
+        { "name": "token_program", "writable": false }
+      ],
+      "args": [ { "name": "amount", "type": "u64" } ]
+    },
+    {
+      "name": "submit_batch",
+      "accounts": [
+        { "name": "owner", "writable": false, "signer": true },
+        { "name": "state", "writable": true, "pda": { "seeds": [ { "kind": "const", "value": "state" } ] } }
+      ],
+      "args": [ { "name": "items", "type": { "vec": "pubkey" } } ]
+    }
+  ]
+}

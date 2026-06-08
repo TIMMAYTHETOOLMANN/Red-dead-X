@@ -1,0 +1,122 @@
+{
+  "source": "https://bugrap.io/bounties — pin concrete contract addresses and exact scope from each official program page before any active step.",
+  "programs": [
+    {
+      "key": "soex-premiumcvt",
+      "name": "SOEX PremiumCVT",
+      "category": "defi",
+      "chains": ["solana"],
+      "vulnClasses": ["smart-contract", "business-logic"],
+      "contracts": [
+        { "chain": "solana", "address": "", "label": "PremiumCVT program (pin from official source)" }
+      ],
+      "notes": "Blockchain -> PremiumCVT only. Richest seams: mint/burn math, authority, reward accounting, referral logic, token custody, state invariants. See docs/00-scope-and-rules.md."
+    },
+    {
+      "key": "bitget",
+      "name": "Bitget Exchange",
+      "category": "exchange",
+      "chains": ["ethereum", "bsc"],
+      "vulnClasses": [
+        "smart-contract",
+        "auth",
+        "input-validation",
+        "info-leak",
+        "network-config",
+        "business-logic",
+        "wallet"
+      ],
+      "contracts": [],
+      "notes": "Centralised exchange plus on-chain assets. Confirm web/app/API scope on the official program page before testing those surfaces."
+    },
+    {
+      "key": "merlinchain",
+      "name": "Merlin Chain",
+      "category": "l2",
+      "chains": ["merlin", "bitcoin"],
+      "vulnClasses": ["smart-contract", "business-logic", "network-config"],
+      "contracts": [],
+      "notes": "Bitcoin L2 with an EVM-equivalent execution layer. EVM contracts are analyzable with the thirdweb-backed EVM recon path."
+    },
+    {
+      "key": "safeheron",
+      "name": "Safeheron",
+      "category": "wallet",
+      "chains": ["ethereum"],
+      "vulnClasses": ["smart-contract", "auth", "info-leak", "wallet"],
+      "contracts": [],
+      "notes": "MPC custody / wallet infrastructure. Key-management and signing flows are central."
+    },
+    {
+      "key": "cregis",
+      "name": "Cregis",
+      "category": "custody",
+      "chains": ["ethereum", "bsc"],
+      "vulnClasses": ["smart-contract", "auth", "info-leak", "business-logic", "wallet"],
+      "contracts": [],
+      "notes": "Wallet & custody platform. Treat balance/withdrawal accounting as a payment graph."
+    },
+    {
+      "key": "morph",
+      "name": "Morph Network",
+      "category": "l2",
+      "chains": ["morph", "ethereum"],
+      "vulnClasses": ["smart-contract", "business-logic", "network-config"],
+      "contracts": [],
+      "notes": "Ethereum L2. Bridge and sequencer contracts are high-value EVM targets."
+    },
+    {
+      "key": "platon",
+      "name": "PlatON",
+      "category": "privacy",
+      "chains": ["platon"],
+      "vulnClasses": ["smart-contract", "business-logic", "network-config"],
+      "contracts": [],
+      "notes": "Privacy-preserving computation network with EVM compatibility."
+    },
+    {
+      "key": "mask",
+      "name": "Mask Network",
+      "category": "privacy",
+      "chains": ["ethereum", "polygon"],
+      "vulnClasses": ["smart-contract", "input-validation", "info-leak", "wallet"],
+      "contracts": [],
+      "notes": "Privacy & Web3 social. Browser-extension surface is in scope per the program page."
+    },
+    {
+      "key": "desyn",
+      "name": "DeSyn Protocol",
+      "category": "defi",
+      "chains": ["ethereum", "arbitrum"],
+      "vulnClasses": ["smart-contract", "business-logic"],
+      "contracts": [],
+      "notes": "DeFi asset-management protocol. Fund/share accounting invariants are the core seam."
+    },
+    {
+      "key": "tokenlon",
+      "name": "Tokenlon",
+      "category": "dex",
+      "chains": ["ethereum", "arbitrum"],
+      "vulnClasses": ["smart-contract", "business-logic"],
+      "contracts": [],
+      "notes": "Decentralised exchange. Signature/relay and settlement logic are high-value."
+    },
+    {
+      "key": "ourbit",
+      "name": "Ourbit",
+      "category": "exchange",
+      "chains": ["ethereum", "bsc"],
+      "vulnClasses": [
+        "smart-contract",
+        "auth",
+        "input-validation",
+        "info-leak",
+        "network-config",
+        "business-logic",
+        "wallet"
+      ],
+      "contracts": [],
+      "notes": "Exchange platform. Confirm exact web/app/API/contract scope on the official program page."
+    }
+  ]
+}

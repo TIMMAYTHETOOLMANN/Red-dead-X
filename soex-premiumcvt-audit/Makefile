@@ -1,6 +1,6 @@
 SHELL := /bin/bash
 
-.PHONY: verify safe-config inventory program-info analyze-idl invariant-sim poc test typecheck validator notes
+.PHONY: verify safe-config inventory program-info analyze-idl invariant-sim poc test typecheck validator notes evm-recon surface-map forensic-scan dotnet-build
 
 verify:
 	rustc --version
@@ -33,6 +33,25 @@ poc:
 
 test:
 	npm test
+
+# --- Multi-chain forensics (BugRap ecosystem) ------------------------------
+
+# Map every in-scope (chain x bounty-class) cell. Set BUGRAP_PROGRAM to scope.
+surface-map:
+	npm run surface-map
+
+# Offline unified forensic report from local IDL_PATH and/or EVM_ABI_PATH.
+forensic-scan:
+	npm run forensic-scan
+
+# thirdweb v5 read-only EVM recon. Requires THIRDWEB_SECRET_KEY/CLIENT_ID,
+# EVM_CHAIN, EVM_ADDRESS. Read-only — never sends a transaction.
+evm-recon:
+	npm run evm-recon
+
+# Build the thirdweb .NET read-only recon tool.
+dotnet-build:
+	cd dotnet/ThirdwebForensics && dotnet build -c Release
 
 typecheck:
 	npm run typecheck

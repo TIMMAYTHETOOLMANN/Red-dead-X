@@ -5,7 +5,10 @@ import {
   InvariantIssue,
   SimParams,
   U64_MAX,
+  checkFeeMonotonicity,
   simulateInvariants,
+  simulateReferralChain,
+  simulateRoundTrip,
 } from "./lib/invariants";
 
 /**
@@ -51,7 +54,48 @@ function buildParams(): SimParams {
 
 function main() {
   const params = buildParams();
-  const issues = simulateInvariants(params);
+  const baseIssues = simulateInvariants(params);
+
+  // Advanced opt-in simulations (enhancements). Each runs only when configured,
+  // so the default battery is unchanged.
+  const roundTripIssues = simulateRoundTrip({
+    feeBps: params.feeBps,
+    feeRounding: params.feeRounding,
+    amounts: params.amounts,
+  });
+
+  const monotonicityIssues = checkFeeMonotonicity(
+    params.amounts,
+    params.feeBps,
+    params.feeRounding,
+  );
+
+  const referralDepthRaw = (process.env.REFERRAL_DEPTH ?? "").trim();
+  let referral: ReturnType<typeof simulateReferralChain> | null = null;
+  if (referralDepthRaw !== "") {
+    const depth = Number(referralDepthRaw);
+    if (!Number.isInteger(depth) || depth < 1) {
+      throw new Error(`REFERRAL_DEPTH must be a positive integer, got "${referralDepthRaw}".`);
+    }
+    const rewardBps = parseBigIntEnv("REFERRAL_REWARD_BPS") ?? params.feeBps;
+    const maxTotalReward = parseBigIntEnv("REFERRAL_MAX_TOTAL");
+    const baseAmount =
+      parseBigIntEnv("REFERRAL_BASE_AMOUNT") ?? params.amounts[params.amounts.length - 1];
+    referral = simulateReferralChain({
+      rewardBps,
+      rounding: params.feeRounding,
+      depth,
+      baseAmount,
+      maxTotalReward,
+    });
+  }
+
+  const issues = [
+    ...baseIssues,
+    ...roundTripIssues,
+    ...monotonicityIssues,
+    ...(referral?.issues ?? []),
+  ];
 
   fs.mkdirSync(evidenceDir, { recursive: true });
   const stamp = new Date().toISOString().replace(/[:.]/g, "-");
@@ -66,6 +110,12 @@ function main() {
       supplyCap: params.supplyCap?.toString() ?? null,
       amounts: params.amounts.map((a) => a.toString()),
     },
+    referral: referral
+      ? {
+          perLevel: referral.perLevel.map((r) => r.toString()),
+          totalPaid: referral.totalPaid.toString(),
+        }
+      : null,
     issueCount: issues.length,
     issues,
   };
