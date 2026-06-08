@@ -113,7 +113,7 @@ const CONFIDENCE_WEIGHT: Record<Confidence, number> = {
  * not churn baselines — identity is (lane, instruction, account).
  */
 export function fingerprint(
-  lane: Lane,
+  lane: Lane | string,
   instruction: string,
   account: string | null,
 ): string {
