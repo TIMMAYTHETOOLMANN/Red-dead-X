@@ -113,7 +113,7 @@ def _parse_human_function(line: str) -> AbiFunction | None:
         sm = "payable"
 
     outputs: list[AbiParam] = []
-    ret_m = re.search(r"returns\s*\(([^)]*)\)", tail)
+    ret_m = re.search(r"returns\s*\(([^)]{0,512})\)", tail)
     if ret_m and ret_m.group(1).strip():
         for part in ret_m.group(1).split(","):
             parts = part.strip().split()
