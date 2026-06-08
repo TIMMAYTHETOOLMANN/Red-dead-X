@@ -8,6 +8,8 @@ multi-chain forensic analysis powered by the **thirdweb SDK** (TypeScript v5 + .
 
 Everything lives in [`soex-premiumcvt-audit/`](./soex-premiumcvt-audit).
 
+> **🛰️ Hugging Face Space:** The forensic engines are also available as a hosted MCP server + Gradio app in [`mcp-stealth-chrome/`](./mcp-stealth-chrome). See [mcp-stealth-chrome/README.md](./mcp-stealth-chrome/README.md) for deployment instructions. MCP endpoint: `https://timmaythetoolmann-mcp-stealth-chrome.hf.space/gradio_api/mcp/sse`
+
 ## What this gives you
 
 - **Guardrailed scaffold** — read-only by default (`READ_ONLY=true`, `ALLOW_TX=false`), keys git-ignored.
