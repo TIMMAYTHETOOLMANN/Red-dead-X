@@ -19,7 +19,8 @@
     "forensic-scan": "tsx scripts/forensic_scan.ts",
     "encoding-analyze": "tsx scripts/encoding_analyzer.ts",
     "data-analyze": "tsx scripts/data_analyzer.ts",
-    "admin-analyze": "tsx scripts/admin_analyzer.ts"
+    "admin-analyze": "tsx scripts/admin_analyzer.ts",
+    "economic-analyze": "tsx scripts/invariant_simulator.ts"
   },
   "keywords": [],
   "author": "",
