@@ -2,10 +2,13 @@ import {
   loadRegistry, enumerateChains, enumerateBounties, getProgramContracts,
   fetchLiveContractMeta, checkLaneCoverage
 } from './util/surface-tools';
+import { enforceLiveData } from './health';
+import { fetchWithFallback } from './util/providers';
 
 // Map the entire attack surface using live onchain data only
 export async function mapSurfaceAndCoverage() {
   const registry = await loadRegistry();
+  enforceLiveData(registry, "BugRap Registry");
   const results = [];
   for (const program of registry.programs) {
     for (const chain of enumerateChains(program)) {
@@ -13,6 +16,7 @@ export async function mapSurfaceAndCoverage() {
         const contracts = getProgramContracts(program, chain, bounty);
         for (const address of contracts) {
           const meta = await fetchLiveContractMeta(address, chain);
+          enforceLiveData(meta, `Live Contract Meta for ${address}`);
           const lanes = checkLaneCoverage(address, chain, bounty);
           results.push({ program, chain, bounty, address,
                         verified: meta.verified, proxy: meta.proxy, abi: !!meta.abi,

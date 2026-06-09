@@ -1,4 +1,5 @@
 import { collectLaneFindings, generateSARIF, exportMarkdown, saveJSON, logTacticalAttackPlan } from './util/report-tools';
+import { mapSurfaceAndCoverage } from './surface_mapper';
 
 export async function exportUnifiedReport(matrix: any[]) {
   for (const cell of matrix) {
@@ -11,6 +12,8 @@ export async function exportUnifiedReport(matrix: any[]) {
 }
 
 if (require.main === module) {
-  // Dummy run
-  exportUnifiedReport([]).then(() => console.log("Report generation complete.")).catch(console.error);
+  mapSurfaceAndCoverage()
+    .then(matrix => exportUnifiedReport(matrix))
+    .then(() => console.log("Report generation complete."))
+    .catch(console.error);
 }

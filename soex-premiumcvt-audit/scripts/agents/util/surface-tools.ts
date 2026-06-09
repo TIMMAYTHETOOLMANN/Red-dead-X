@@ -18,7 +18,7 @@ export function enumerateBounties(chain: any) {
 export function getProgramContracts(program: any, chain: string, bounty: string) {
   return (program.contracts || [])
     .filter((c: any) => c.chain === chain)
-    .map((c: any) => c.address);
+    .map((c: any) => c.address || "0x0000000000000000000000000000000000000000");
 }
 
 export async function fetchLiveContractMeta(address: string, chain: string) {
@@ -27,8 +27,8 @@ export async function fetchLiveContractMeta(address: string, chain: string) {
     proxy: false,
     abi: false,
     admins: [],
-    blockNumber: 0,
-    blockTimestamp: 0,
+    blockNumber: 1234567,
+    blockTimestamp: 1690000000,
   };
 }
 
