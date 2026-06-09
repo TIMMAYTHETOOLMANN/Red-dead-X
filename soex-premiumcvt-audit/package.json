@@ -16,7 +16,8 @@
     "poc": "tsx scripts/poc_harness.ts",
     "evm-recon": "tsx scripts/evm_recon.ts",
     "surface-map": "tsx scripts/surface_map.ts",
-    "forensic-scan": "tsx scripts/forensic_scan.ts"
+    "forensic-scan": "tsx scripts/forensic_scan.ts",
+    "encoding-analyze": "tsx scripts/encoding_analyzer.ts"
   },
   "keywords": [],
   "author": "",
