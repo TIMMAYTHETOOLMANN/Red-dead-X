@@ -1,0 +1,16 @@
+# Red-dead-X: MAX OPERATIONAL FORENSIC PLATFORM
+
+## Capabilities Spec
+This project is an all-gas, no-brakes forensic platform for smart contracts and DeFi protocols.
+It exports all supported chains, contract types, analytic/attack tools, and data ingestion/export modalities.
+It is instantly consumable by every AI coding assistant (VS Code, Cursor, JetBrains, WindSurf, CodeEdit, Claude, ChatGPT, Thirdweb Agent, Web IDEs).
+
+## Features
+- **UNIVERSAL CHAIN INTEGRATION:** Ethereum, Solana, BSC, Base, AVAX, Sui, Aptos, Polygon, Cosmos, ZK-rollups.
+- **AUTO-DISCOVERY:** thirdweb MCP/Registry API, direct chain/cross-chain inventory, bug bounty program feeds.
+- **TOOLCHAIN:** Base64/32/85/91, ASCII, Hex, URL, JWT, JSON, TOML, YAML, diff, validation.
+- **ECONOMIC SIM:** Uniswap, Balancer, Curve, Sushi, Solend, DA pricing.
+- **MCP/SDK INTEGRATION:** thirdweb, Ethers, Web3, Alchemy, Infura, Go-ethereum, Solana.js.
+- **FORENSIC MODULES:** Surface Mapper, Evidence Export (SARIF, JSON, Markdown), Attack Plan Simulator.
+- **ALL-GAS MODE:** No simulation, no stale data. Always connected to live chains.
+- **PLUGIN MODULARITY:** Direct integrations with JetBrains and VSCode plugins.
