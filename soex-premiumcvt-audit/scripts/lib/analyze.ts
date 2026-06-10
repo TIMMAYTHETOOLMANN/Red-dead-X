@@ -1,4 +1,5 @@
 import crypto from "crypto";
+import { logger } from "./logger";
 import {
   NormalizedAccount,
   NormalizedIdl,
@@ -93,6 +94,14 @@ export type RawFinding = Omit<Finding, "id" | "risk" | "confidence"> & {
 
 const SEVERITY_ORDER: Severity[] = ["critical", "high", "medium", "low", "info"];
 
+const SEVERITY_INDEX: Record<Severity, number> = {
+  critical: 0,
+  high: 1,
+  medium: 2,
+  low: 3,
+  info: 4,
+};
+
 const SEVERITY_WEIGHT: Record<Severity, number> = {
   critical: 5,
   high: 4,
@@ -112,16 +121,24 @@ const CONFIDENCE_WEIGHT: Record<Confidence, number> = {
  * across runs. Deliberately excludes prose (title/detail) so wording tweaks do
  * not churn baselines — identity is (lane, instruction, account).
  */
+const fingerprintCache = new Map<string, string>();
+
 export function fingerprint(
   lane: Lane | string,
   instruction: string,
   account: string | null,
 ): string {
-  return crypto
+  const key = `${lane}\u0000${instruction}\u0000${account ?? ""}`;
+  if (fingerprintCache.has(key)) {
+    return fingerprintCache.get(key)!;
+  }
+  const hash = crypto
     .createHash("sha256")
-    .update(`${lane}\u0000${instruction}\u0000${account ?? ""}`)
+    .update(key)
     .digest("hex")
     .slice(0, 16);
+  fingerprintCache.set(key, hash);
+  return hash;
 }
 
 /** Composite rank used for ordering: impact-if-true × likelihood-it-is-real. */
@@ -171,13 +188,21 @@ const INIT_RE = /(init|initialize|create|open|register|new_)/i;
 /** Arg types whose size the caller controls (unbounded → compute/DoS seam). */
 const UNBOUNDED_ARG_RE = /^(vec<|bytes$|string$)/i;
 
+const programLikeCache = new WeakMap<NormalizedAccount, boolean>();
 function isProgramLike(account: NormalizedAccount): boolean {
+  if (programLikeCache.has(account)) return programLikeCache.get(account)!;
   // System/sysvar/token programs are typically pinned by a fixed address.
-  return account.hasAddress || /program|sysvar|rent|clock/i.test(account.name);
+  const res = account.hasAddress || /program|sysvar|rent|clock/i.test(account.name);
+  programLikeCache.set(account, res);
+  return res;
 }
 
+const seedsCache = new WeakMap<NormalizedAccount, boolean>();
 function hasSeeds(account: NormalizedAccount): boolean {
-  return account.seeds.length > 0;
+  if (seedsCache.has(account)) return seedsCache.get(account)!;
+  const res = account.seeds.length > 0;
+  seedsCache.set(account, res);
+  return res;
 }
 
 function seedSummary(account: NormalizedAccount): string {
@@ -635,6 +660,9 @@ function emptyLaneCounts(): Record<Lane, number> {
 }
 
 export function analyzeIdl(idl: NormalizedIdl): AnalysisResult {
+  logger.info(`Starting deep static IDL analysis for program: ${idl.name}`);
+  const startTime = Date.now();
+  
   const perInstruction = idl.instructions.flatMap(analyzeInstruction);
   const correlated = correlateAccounts(idl).map(finalize);
   const findings = [...perInstruction, ...correlated];
@@ -654,11 +682,14 @@ export function analyzeIdl(idl: NormalizedIdl): AnalysisResult {
   const sorted = [...findings].sort(
     (a, b) =>
       b.risk - a.risk ||
-      SEVERITY_ORDER.indexOf(a.severity) - SEVERITY_ORDER.indexOf(b.severity) ||
+      SEVERITY_INDEX[a.severity] - SEVERITY_INDEX[b.severity] ||
       a.instruction.localeCompare(b.instruction),
   );
 
   const maxRisk = findings.reduce((m, f) => Math.max(m, f.risk), 0);
+
+  const duration = Date.now() - startTime;
+  logger.info(`Completed IDL analysis for ${idl.name} in ${duration}ms. Findings: ${findings.length}`);
 
   return {
     program: idl.name,

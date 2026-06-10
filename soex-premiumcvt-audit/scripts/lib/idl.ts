@@ -202,7 +202,10 @@ export function normalizeIdl(raw: unknown): NormalizedIdl {
   return { name, address, instructions };
 }
 
+const idlCache = new Map<string, NormalizedIdl>();
+
 export function loadIdl(path: string): NormalizedIdl {
+  if (idlCache.has(path)) return idlCache.get(path)!;
   const raw = fs.readFileSync(path, "utf8");
   let parsed: unknown;
   try {
@@ -210,5 +213,7 @@ export function loadIdl(path: string): NormalizedIdl {
   } catch (err) {
     throw new Error(`Failed to parse IDL JSON at ${path}: ${(err as Error).message}`);
   }
-  return normalizeIdl(parsed);
+  const normalized = normalizeIdl(parsed);
+  idlCache.set(path, normalized);
+  return normalized;
 }
