@@ -8,7 +8,7 @@ multi-chain forensic analysis powered by the **thirdweb SDK** (TypeScript v5 + .
 
 Everything lives in [`soex-premiumcvt-audit/`](./soex-premiumcvt-audit).
 
-> **🛰️ Hugging Face Space:** The forensic engines are also available as a hosted MCP server + Gradio app in [`mcp-stealth-chrome/`](./mcp-stealth-chrome). See [mcp-stealth-chrome/README.md](./mcp-stealth-chrome/README.md) for deployment instructions. MCP endpoint: `https://timmaythetoolmann-mcp-stealth-chrome.hf.space/gradio_api/mcp/sse`
+> **Note on MCP Stealth Chrome**: `mcp-stealth-chrome` is an independent sub-project built into a separate branch intended for extraction and deletion from this system. The Red Dead system's configuration has been decoupled to reflect this hard separation, ensuring that this `soex-premiumcvt-audit` base acts as a standalone toolset without dependencies on the Stealth Chrome components.
 
 ## What this gives you
 
