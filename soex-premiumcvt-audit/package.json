@@ -9,6 +9,8 @@
   "scripts": {
     "test": "node --import tsx --test tests/*.test.ts",
     "typecheck": "tsc --noEmit",
+    "lint": "eslint . --ext .ts",
+    "format": "prettier --write .",
     "inventory": "tsx scripts/readonly_inventory.ts",
     "program-info": "tsx scripts/program_info.ts",
     "analyze-idl": "tsx scripts/idl_analyze.ts",
