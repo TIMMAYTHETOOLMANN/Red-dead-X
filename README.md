@@ -31,6 +31,9 @@ Everything lives in [`soex-premiumcvt-audit/`](./soex-premiumcvt-audit).
 - **Multi-chain forensics** (BugRap / D5 ecosystem — see `soex-premiumcvt-audit/docs/06-multichain-forensics.md`):
   - `npm run surface-map` — enumerate and **payout-rank** every (program × chain × bounty-type) cell
     across the registry so no attack surface is skipped.
+  - `npm run registry-doctor` — readiness report flagging which programs are **armed** (contract
+    addresses pinned) vs **shell** (placeholders only), so the coverage numbers above aren't read as
+    more complete than the underlying data.
   - `npm run forensic-scan` — unified offline report folding Solana IDL + EVM ABI findings into one
     combined SARIF + Markdown brief.
   - `npm run evm-recon` — read-only live EVM recon via the **thirdweb** SDK (resolves ABI +

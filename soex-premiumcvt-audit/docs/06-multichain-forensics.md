@@ -47,6 +47,12 @@ npm run surface-map
 # ...or scope to one program:
 BUGRAP_PROGRAM=bitget npm run surface-map
 
+# Readiness check: which programs are "armed" (addresses pinned) vs "shell" (placeholders),
+# so the coverage numbers above aren't read as more complete than the underlying data.
+npm run registry-doctor
+# ...or gate CI on it once addresses are expected to be pinned:
+FAIL_ON_SHELL=true npm run registry-doctor
+
 # Offline unified forensic report from a Solana IDL and/or an EVM ABI you already hold.
 IDL_PATH=./targets/premiumcvt.json \
 EVM_ABI_PATH=./targets/contract-abi.json EVM_CHAIN=ethereum \

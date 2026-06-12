@@ -1,6 +1,6 @@
 SHELL := /bin/bash
 
-.PHONY: verify safe-config inventory program-info analyze-idl invariant-sim poc test typecheck validator notes evm-recon surface-map forensic-scan dotnet-build
+.PHONY: verify safe-config inventory program-info analyze-idl invariant-sim poc test typecheck validator notes evm-recon surface-map registry-doctor forensic-scan dotnet-build
 
 verify:
 	rustc --version
@@ -39,6 +39,10 @@ test:
 # Map every in-scope (chain x bounty-class) cell. Set BUGRAP_PROGRAM to scope.
 surface-map:
 	npm run surface-map
+
+# Registry readiness: report armed (addresses pinned) vs shell (placeholders) programs.
+registry-doctor:
+	npm run registry-doctor
 
 # Offline unified forensic report from local IDL_PATH and/or EVM_ABI_PATH.
 forensic-scan:
