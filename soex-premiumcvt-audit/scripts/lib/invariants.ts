@@ -26,7 +26,7 @@ export interface SimParams {
   /** Direction the program rounds fees. */
   feeRounding: Rounding;
   /** Optional max supply cap for mint-count checks. */
-  supplyCap?: bigint;
+  supplyCap?: bigint | undefined;
   /** Representative HVT/value amounts to probe (base units). */
   amounts: bigint[];
 }
@@ -155,7 +155,7 @@ export interface ReferralChainParams {
   /** Base amount that triggers the per-ancestor reward. */
   baseAmount: bigint;
   /** Optional configured maximum total referral reward (per docs/02). */
-  maxTotalReward?: bigint;
+  maxTotalReward?: bigint | undefined;
 }
 
 export interface ReferralChainResult {
