@@ -189,8 +189,11 @@ const PROGRAM_DATA_RE = /program[_-]?data/i;
 /** An account that receives an authority/role (e.g. `new_authority`, `new_admin`). */
 const AUTHORITY_RECIPIENT_RE = /(new_?|next_?|pending_?).*(authority|admin|owner)/i;
 
-/** Account names that imply token custody. */
-const TOKEN_RE = /(token|vault|ata|mint|escrow|pool|reserve|treasury)/i;
+/** Account names that imply token custody. The `ata` (associated-token-account)
+ * token is matched with delimiters so it does not spuriously fire inside words
+ * like "data"/"metadata". */
+const TOKEN_RE =
+  /(token|vault|mint|escrow|pool|reserve|treasury|(?:^|_|-)ata(?:$|_|-))/i;
 
 /** Account names that imply referral-graph participation. */
 const REFERRAL_RE = /(referr|referer|parent|sponsor|upline|downline|invite|inviter)/i;
