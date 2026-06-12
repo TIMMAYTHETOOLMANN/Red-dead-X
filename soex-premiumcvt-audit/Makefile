@@ -1,6 +1,6 @@
 SHELL := /bin/bash
 
-.PHONY: verify safe-config inventory program-info analyze-idl invariant-sim poc test typecheck validator notes evm-recon surface-map registry-doctor forensic-scan dotnet-build
+.PHONY: verify safe-config inventory program-info analyze-idl invariant-sim poc test typecheck validator notes evm-recon surface-map registry-doctor forensic-scan encoding-analyze data-analyze admin-analyze economic-analyze dotnet-build
 
 verify:
 	rustc --version
@@ -45,8 +45,23 @@ registry-doctor:
 	npm run registry-doctor
 
 # Offline unified forensic report from local IDL_PATH and/or EVM_ABI_PATH.
+# Optionally fold encoding/data/admin/economic evidence in via AUX_INPUT_PATH.
 forensic-scan:
 	npm run forensic-scan
+
+# Stage 1/2/3/4 analyzers. Each reads a real *_INPUT_PATH JSON file (or a
+# sample fixture when unset) and writes a unified JSON+SARIF+Markdown brief.
+encoding-analyze:
+	npm run encoding-analyze
+
+data-analyze:
+	npm run data-analyze
+
+admin-analyze:
+	npm run admin-analyze
+
+economic-analyze:
+	npm run economic-analyze
 
 # thirdweb v5 read-only EVM recon. Requires THIRDWEB_SECRET_KEY/CLIENT_ID,
 # EVM_CHAIN, EVM_ADDRESS. Read-only — never sends a transaction.

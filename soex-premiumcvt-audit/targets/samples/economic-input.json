@@ -1,0 +1,5 @@
+{
+  "feeRateBps": 100,
+  "swapAmounts": ["1", "50", "1000"],
+  "probeVulnerableMint": true
+}

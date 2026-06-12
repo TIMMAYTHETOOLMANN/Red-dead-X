@@ -54,8 +54,10 @@ npm run registry-doctor
 FAIL_ON_SHELL=true npm run registry-doctor
 
 # Offline unified forensic report from a Solana IDL and/or an EVM ABI you already hold.
+# Optionally fold in encoding/data/admin/economic evidence via AUX_INPUT_PATH.
 IDL_PATH=./targets/premiumcvt.json \
 EVM_ABI_PATH=./targets/contract-abi.json EVM_CHAIN=ethereum \
+AUX_INPUT_PATH=./targets/samples/aux-input.json \
 BUGRAP_PROGRAM=bitget npm run forensic-scan
 
 # Live read-only EVM recon via thirdweb (see docs/07-thirdweb-sdk.md).
@@ -64,6 +66,45 @@ BUGRAP_PROGRAM=bitget npm run evm-recon
 ```
 
 Outputs land in `evidence/` (git-ignored) as JSON + SARIF + Markdown.
+
+## Auxiliary analyzers feed the same pipeline
+
+The Stage 1/2/3/4 analyzers no longer print to the console with mock inputs —
+they each accept a real JSON input file and emit `UnifiedFinding`s into the same
+SARIF + Markdown report as the Solana/EVM engines:
+
+```bash
+# Each reads a real input file (falls back to a sample fixture if unset) and
+# writes a unified JSON+SARIF+Markdown brief to evidence/.
+ENCODING_INPUT_PATH=./targets/samples/encoding-input.json npm run encoding-analyze
+DATA_INPUT_PATH=./targets/samples/data-input.json         npm run data-analyze
+ADMIN_INPUT_PATH=./targets/samples/admin-input.json       npm run admin-analyze
+ECONOMIC_INPUT_PATH=./targets/samples/economic-input.json npm run economic-analyze
+```
+
+`forensic-scan` accepts the union of these via `AUX_INPUT_PATH` (see the
+`aux-input.json` sample), so a single run lands encoding, data-manipulation,
+admin/authority, and economic-invariant evidence in one brief.
+
+> Note: admin EOA-vs-multisig detection is a labelled **placeholder** heuristic
+> (address-substring matching). Supply a `knownMultisigs` / `knownEoas`
+> classification in the admin input to override it with verified on-chain facts;
+> the heuristic is only a fallback and is marked as such in every finding.
+
+## Depth: exploit-chain correlation and cross-chain dedup
+
+Two correlation passes run automatically inside `forensic-scan`:
+
+- **Exploit-chain correlation** links an access-control *enabler* (a privilege/
+  authority gap, severity ≥ high) to a downstream *amplifier* at a **different**
+  function/instruction (arbitrary call, token approval, economic math, etc.) and
+  emits a composite `exploit-chain` finding (`A → B`) with escalated severity.
+  This surfaces the multi-step bugs hunters actually get paid for, rather than
+  ranking each leg independently.
+- **Cross-chain dedup** collapses the *same seam* (address + lane + locator)
+  found on multiple chains into a single finding tagged `(same seam, N chains)`,
+  so a contract deployed on 3 chains yields one finding across three, not three
+  duplicates.
 
 ## Scope discipline still applies
 

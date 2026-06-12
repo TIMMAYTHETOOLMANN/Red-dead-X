@@ -1,0 +1,8 @@
+{
+  "fields": [
+    { "name": "init_payload", "value": "0x61646d696e" },
+    { "name": "role", "value": "YWRtaW4=" },
+    { "name": "referrer", "value": "726f757465313233" },
+    { "name": "memo", "value": "0x68656c6c6f" }
+  ]
+}

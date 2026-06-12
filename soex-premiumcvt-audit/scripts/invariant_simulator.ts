@@ -1,60 +1,38 @@
-import { INVARIANT_SIM_CONFIG, SimulationEngine, SimResult } from "./lib/invariant.js";
+import "dotenv/config";
+import { EconomicInput, analyzeEconomic, entryFromFindings } from "./lib/aux_analyzers";
+import { readJsonInput, writeUnifiedReport } from "./aux_io";
 
-function printResult(res: SimResult) {
-  const status = res.invariantPassed ? "[PASS]" : "[FAIL]";
-  console.log(`${status} Action: ${res.action}`);
-  console.log(`       Inputs: ${JSON.stringify(res.inputs)}`);
-  
-  if (!res.invariantPassed && res.failureReason) {
-    console.log(`       => REASON: ${res.failureReason}`);
-    if (res.vulnCategory) console.log(`       => CATEGORY: ${res.vulnCategory}`);
-  }
+/**
+ * Economic / invariant simulation analyzer (read-only, pure logic + file I/O).
+ *
+ * Runs the exact-arithmetic invariant probes against real parameters (fee rate,
+ * swap amounts, optional vulnerable-mint probe) and folds overflow / dust-drain
+ * findings into the unified SARIF + Markdown brief.
+ *
+ * Env:
+ *   ECONOMIC_INPUT_PATH   JSON input (default targets/samples/economic-input.json)
+ *   BUGRAP_PROGRAM        program label for the report target (default "soex-premiumcvt")
+ *   EVM_CHAIN             chain label for the report target (default "ethereum")
+ *   EVIDENCE_DIR          output dir (default ./evidence)
+ */
+
+function main() {
+  const input = readJsonInput<EconomicInput>(
+    "ECONOMIC_INPUT_PATH",
+    "targets/samples/economic-input.json",
+  );
+  const findings = analyzeEconomic(input);
+  const entry = entryFromFindings(
+    {
+      program: (process.env.BUGRAP_PROGRAM ?? "soex-premiumcvt").trim(),
+      chain: (process.env.EVM_CHAIN ?? "ethereum").trim(),
+      vm: "evm",
+      address: null,
+      label: "economic invariants",
+    },
+    findings,
+  );
+  writeUnifiedReport("economic-analyze", entry);
 }
 
-async function main() {
-  console.log("=== ECONOMIC & INVARIANT SIMULATION ===");
-  console.log("Stage 3 Analysis\n");
-
-  const engine = new SimulationEngine();
-
-  console.log("--- 1. Testing Overflow / Supply Cap ---");
-  console.log("Pre-state Supply:", engine.supply.toString());
-  
-  // Test safe mint
-  const r1 = engine.simulateMint("1000", false);
-  printResult(r1);
-
-  // Test overflow on vulnerable mint
-  // 2**256 - 1
-  const maxUint = INVARIANT_SIM_CONFIG.safetyBounds.supplyMax;
-  const r2 = engine.simulateMint(maxUint, true); // Should trigger wraparound
-  printResult(r2);
-  console.log(`       Post-state Supply (Wrapped): ${engine.supply.toString()}`);
-
-  console.log("\n--- 2. Testing Dust Drain & Monotonic Fees ---");
-  // reset state for isolation
-  engine.treasury = 1000n;
-  console.log("Pre-state Treasury:", engine.treasury.toString());
-
-  // Normal Swap (fee 100 bps = 1%)
-  const r3 = engine.simulateSwapFee("1000", 100n);
-  printResult(r3);
-  
-  // Dust Swap (fee 100 bps = 1%, input 1 unit -> fee is 0 due to rounding)
-  const r4 = engine.simulateSwapFee("1", 100n);
-  printResult(r4);
-
-  // Medium swap vs large swap fee check
-  const r5 = engine.simulateSwapFee("50", 100n);
-  printResult(r5);
-
-  console.log("\n--- 3. Loaded Configurations ---");
-  console.log(`Invariants Tracked: ${INVARIANT_SIM_CONFIG.invariants.length}`);
-  console.log(`Safety Bounds Loaded:`);
-  console.log(` - Min Fee: ${INVARIANT_SIM_CONFIG.safetyBounds.minFee}`);
-  console.log(` - Max Supply: ${INVARIANT_SIM_CONFIG.safetyBounds.supplyMax}`);
-
-  console.log("\n=======================================");
-}
-
-main().catch(console.error);
+main();

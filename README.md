@@ -35,7 +35,13 @@ Everything lives in [`soex-premiumcvt-audit/`](./soex-premiumcvt-audit).
     addresses pinned) vs **shell** (placeholders only), so the coverage numbers above aren't read as
     more complete than the underlying data.
   - `npm run forensic-scan` — unified offline report folding Solana IDL + EVM ABI findings into one
-    combined SARIF + Markdown brief.
+    combined SARIF + Markdown brief. Optionally folds encoding/data/admin/economic evidence via
+    `AUX_INPUT_PATH`, then runs **exploit-chain correlation** (links an access-control enabler to a
+    downstream amplifier → composite `A → B` finding) and **cross-chain dedup** (collapses the same
+    seam found on N chains into one finding tagged *(same seam, N chains)*).
+  - `npm run encoding-analyze` / `data-analyze` / `admin-analyze` / `economic-analyze` — the Stage
+    1/2/3/4 analyzers; each reads a real `*_INPUT_PATH` JSON file (sample fixture when unset) and
+    emits findings into the **same** unified SARIF + Markdown pipeline.
   - `npm run evm-recon` — read-only live EVM recon via the **thirdweb** SDK (resolves ABI +
     proxy implementation, then runs the EVM hunting lanes).
   - `targets/bugrap-programs.json` — the program registry (in-scope chains, bounty classes, contracts,

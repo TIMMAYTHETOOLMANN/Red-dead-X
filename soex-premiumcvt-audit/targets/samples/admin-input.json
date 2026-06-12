@@ -1,0 +1,19 @@
+{
+  "contract": "VaultContract",
+  "state": {
+    "upgradeAuthority": "0xEOA1234567890abcdef1234567890abcdef12345",
+    "owner": "0xMULTI0000000000000000000000000000000000",
+    "pauser": "0xEOA99999999999999999999999999999999999",
+    "feeRate": 500
+  },
+  "abi": [
+    { "name": "transfer", "modifiers": [] },
+    { "name": "upgradeTo", "modifiers": ["onlyUpgradeAuthority"] },
+    { "name": "pause", "modifiers": ["onlyPauser"] },
+    { "name": "emergencyWithdraw", "modifiers": [] },
+    { "name": "mint", "modifiers": ["onlyOwner"] }
+  ],
+  "classification": {
+    "knownMultisigs": ["0xMULTI0000000000000000000000000000000000"]
+  }
+}
