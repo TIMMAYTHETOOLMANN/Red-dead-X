@@ -166,6 +166,29 @@ const PRIVILEGED_RE =
 const AUTHORITY_RE =
   /(authority|admin|owner|governance|treasury|signer|payer|delegate|manager|operator)/i;
 
+/**
+ * A *protocol* authority/role — deliberately excludes beneficiary-class names
+ * (`payer`, `owner`, `user`, `funder`) so we can tell "a privileged op is gated
+ * by a distinct admin/authority" apart from "a privileged op is gated only by
+ * whoever happens to call it".
+ */
+const PROTOCOL_AUTHORITY_RE = /(authority|admin|governance|manager|operator|delegate)/i;
+
+/** Instruction names that create/move value and therefore demand authorization. */
+const VALUE_OP_RE =
+  /(mint|burn|withdraw|redeem|claim|payout|distribute|deposit|transfer|swap)/i;
+
+/** The subset of value ops whose abuse is directly fund-creating/extracting. */
+const HIGH_VALUE_OP_RE = /(mint|burn|withdraw|redeem|transfer|swap)/i;
+
+/** The upgradeable-loader ProgramData account: writable *state* (holds the
+ * upgrade authority), NOT a CPI program target — must not be treated as a pinned
+ * program account. */
+const PROGRAM_DATA_RE = /program[_-]?data/i;
+
+/** An account that receives an authority/role (e.g. `new_authority`, `new_admin`). */
+const AUTHORITY_RECIPIENT_RE = /(new_?|next_?|pending_?).*(authority|admin|owner)/i;
+
 /** Account names that imply token custody. */
 const TOKEN_RE = /(token|vault|ata|mint|escrow|pool|reserve|treasury)/i;
 
@@ -192,7 +215,12 @@ const programLikeCache = new WeakMap<NormalizedAccount, boolean>();
 function isProgramLike(account: NormalizedAccount): boolean {
   if (programLikeCache.has(account)) return programLikeCache.get(account)!;
   // System/sysvar/token programs are typically pinned by a fixed address.
-  const res = account.hasAddress || /program|sysvar|rent|clock/i.test(account.name);
+  // Exception: the upgradeable-loader `program_data` account merely *contains*
+  // "program" in its name but is writable state (it holds the upgrade authority),
+  // so it must remain analyzable — never silently skipped as a pinned program.
+  const res =
+    account.hasAddress ||
+    (/program|sysvar|rent|clock/i.test(account.name) && !PROGRAM_DATA_RE.test(account.name));
   programLikeCache.set(account, res);
   return res;
 }
@@ -232,6 +260,37 @@ function laneAuthority(ix: NormalizedInstruction): RawFinding[] {
         "Confirm in source: require a `Signer<'info>` (or `has_one` against a stored " +
         "authority that must sign). Reproduce by invoking with an unrelated keypair.",
     });
+  }
+
+  // Self-authorized value operation: a fund-creating/-moving instruction that
+  // *does* have a signer, but whose signer set contains no **distinct protocol
+  // authority** (admin/authority/governance/...). The only thing standing
+  // between a caller and minting/withdrawing is the caller's own signature, so
+  // the privileged action is effectively self-authorized. Lane A's no-signer
+  // rule above structurally cannot see this (a signer is present).
+  if (VALUE_OP_RE.test(ix.name) && anySigner) {
+    const writesNonProgram = ix.accounts.some((a) => a.writable && !isProgramLike(a));
+    const hasProtocolAuthority = ix.accounts.some((a) => PROTOCOL_AUTHORITY_RE.test(a.name));
+    if (writesNonProgram && !hasProtocolAuthority) {
+      const severity: Severity = HIGH_VALUE_OP_RE.test(ix.name) ? "high" : "medium";
+      findings.push({
+        lane: "A-authority",
+        severity,
+        confidence: "likely",
+        instruction: ix.name,
+        account: null,
+        title: "Value-moving instruction has no distinct protocol authority",
+        detail:
+          `Instruction \`${ix.name}\` creates or moves value and writes a non-program account, ` +
+          `but no admin/authority/governance account participates — the only authorization is ` +
+          `the caller's own signature. If a privileged authority is not separately required, ` +
+          `any caller can self-authorize this operation (e.g. unauthorized mint/withdraw/claim).`,
+        recommendation:
+          "Require a distinct, stored protocol authority to sign (e.g. `has_one = authority` + " +
+          "`Signer`) for this operation, separate from the payer/beneficiary. Test by invoking " +
+          "with a fresh keypair that is not the configured authority.",
+      });
+    }
   }
 
   for (const acc of ix.accounts) {
@@ -295,17 +354,27 @@ function laneAccountSubstitution(ix: NormalizedInstruction): RawFinding[] {
     // Attacker-influenced PDA seed (`arg`) — the caller can steer which PDA is hit.
     const argSeed = acc.seeds.find((s) => s.kind === "arg");
     if (argSeed) {
+      // If the PDA is *also* seeded by an account (e.g. the signer/owner pubkey),
+      // the caller can only steer within their own namespace. If there is no
+      // account-kind seed at all, the arg is the only thing selecting the PDA, so
+      // a caller can address another user's PDA outright (cross-user theft /
+      // collision) — a materially stronger seam, so rank it higher.
+      const accountBoundSeed = acc.seeds.some((s) => s.kind === "account");
       findings.push({
         lane: "B-account-substitution",
-        severity: "low",
-        confidence: "tentative",
+        severity: accountBoundSeed ? "low" : "medium",
+        confidence: accountBoundSeed ? "tentative" : "likely",
         instruction: ix.name,
         account: acc.name,
         title: "PDA seed is derived from a caller-supplied argument",
         detail:
           `PDA \`${acc.name}\` in \`${ix.name}\` uses a caller-supplied arg (\`${argSeed.value}\`) ` +
           `as a seed. Caller-steered seeds can let an attacker target or collide PDAs they ` +
-          `should not control.`,
+          `should not control.` +
+          (accountBoundSeed
+            ? ""
+            : ` No account-kind seed (e.g. the signer/owner pubkey) binds this PDA, so the ` +
+              `caller can address *another user's* PDA by supplying their value.`),
         recommendation:
           "Confirm the arg-derived seed is additionally bound to the signer/owner so it " +
           "cannot address another user's PDA.",
@@ -422,6 +491,30 @@ function laneUpgradeAdmin(ix: NormalizedInstruction): RawFinding[] {
       "Verify the current authority is enforced via `has_one`+`Signer`. Cross-check the " +
       "on-chain upgrade authority with `npm run program-info`.",
   });
+
+  // One-step authority hand-off: the new authority is named/handed in but never
+  // signs and is otherwise unbound. A direct (non-two-step) transfer to an
+  // address that does not have to accept the role risks handing control to a
+  // typo'd or attacker-supplied account with no recovery.
+  for (const acc of ix.accounts) {
+    if (!AUTHORITY_RECIPIENT_RE.test(acc.name)) continue;
+    if (acc.signer || isProgramLike(acc)) continue;
+    findings.push({
+      lane: "F-upgrade-admin",
+      severity: "medium",
+      confidence: "likely",
+      instruction: ix.name,
+      account: acc.name,
+      title: "Authority handed to a non-signing account (no two-step acceptance)",
+      detail:
+        `Instruction \`${ix.name}\` assigns authority to \`${acc.name}\`, which does not sign ` +
+        `and is unbound. A one-step transfer to an account that never has to accept the role ` +
+        `means a wrong/attacker-supplied address takes control immediately, with no recovery.`,
+      recommendation:
+        "Adopt a two-step transfer: store a `pending_authority`, then require the new authority " +
+        "to sign an explicit `accept_authority` before it takes effect.",
+    });
+  }
   return findings;
 }
 

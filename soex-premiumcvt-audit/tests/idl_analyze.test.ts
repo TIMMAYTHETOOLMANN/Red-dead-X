@@ -104,3 +104,76 @@ test("does not flag a properly pinned program account", () => {
   const noise = result.findings.find((x) => x.account === "system_program");
   assert.equal(noise, undefined, "pinned program accounts should not be flagged");
 });
+
+test("flags mint_cvt as a self-authorized value op (no distinct protocol authority)", () => {
+  const idl = loadIdl(fixture);
+  const result = analyzeIdl(idl);
+  const f = result.findings.find(
+    (x) =>
+      x.instruction === "mint_cvt" &&
+      x.lane === "A-authority" &&
+      x.account === null &&
+      /no distinct protocol authority/.test(x.title),
+  );
+  assert.ok(f, "expected a self-authorized value-op finding for mint_cvt");
+  assert.equal(f!.severity, "high");
+});
+
+test("flags claim_rewards as a self-authorized value op (medium)", () => {
+  const idl = loadIdl(fixture);
+  const result = analyzeIdl(idl);
+  const f = result.findings.find(
+    (x) =>
+      x.instruction === "claim_rewards" &&
+      x.lane === "A-authority" &&
+      x.account === null &&
+      /no distinct protocol authority/.test(x.title),
+  );
+  assert.ok(f, "expected a self-authorized value-op finding for claim_rewards");
+  assert.equal(f!.severity, "medium");
+});
+
+test("flags the upgradeable-loader program_data account as unbound writable (not skipped)", () => {
+  const idl = loadIdl(fixture);
+  const result = analyzeIdl(idl);
+  const f = result.findings.find(
+    (x) => x.account === "program_data" && x.lane === "B-account-substitution",
+  );
+  assert.ok(f, "expected program_data to be analyzed, not treated as a pinned program");
+});
+
+test("flags one-step authority hand-off to a non-signing new_authority (lane F)", () => {
+  const idl = loadIdl(fixture);
+  const result = analyzeIdl(idl);
+  const f = result.findings.find(
+    (x) =>
+      x.instruction === "set_upgrade_authority" &&
+      x.lane === "F-upgrade-admin" &&
+      x.account === "new_authority",
+  );
+  assert.ok(f, "expected a two-step-acceptance finding for new_authority");
+  assert.equal(f!.severity, "medium");
+});
+
+test("elevates a caller-steered PDA not bound to the signer (lane B)", () => {
+  const idl = loadIdl(fixture);
+  const result = analyzeIdl(idl);
+  const f = result.findings.find(
+    (x) =>
+      x.instruction === "claim_rewards" &&
+      x.account === "reward_account" &&
+      /caller-supplied argument/.test(x.title),
+  );
+  assert.ok(f, "expected arg-seed finding for reward_account");
+  // reward_account is seeded only by const + arg (no account/signer seed) -> elevated.
+  assert.equal(f!.severity, "medium");
+});
+
+test("enhanced analysis unearths more than the recorded baseline of 15", () => {
+  const idl = loadIdl(fixture);
+  const result = analyzeIdl(idl);
+  assert.ok(
+    result.findings.length > 15,
+    `expected more than the 15-finding baseline, got ${result.findings.length}`,
+  );
+});
