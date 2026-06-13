@@ -42,7 +42,7 @@ export interface BugRapProgram {
   /** Concrete in-scope contracts/programs, when published. */
   contracts: ScopedContract[];
   /** Optional payout-band override (USD); falls back to taxonomy defaults. */
-  payoutBands?: PayoutBand[];
+  payoutBands?: PayoutBand[] | undefined;
   /** Free-form scope notes / rules-of-engagement pointers. */
   notes: string;
 }

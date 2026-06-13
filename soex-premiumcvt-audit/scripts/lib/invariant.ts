@@ -47,8 +47,8 @@ export interface SimResult {
   preState: Record<string, bigint>;
   postState: Record<string, bigint>;
   invariantPassed: boolean;
-  failureReason?: string;
-  vulnCategory?: string;
+  failureReason?: string | undefined;
+  vulnCategory?: string | undefined;
 }
 
 // Very basic mocking engine for financial operations

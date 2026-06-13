@@ -25,27 +25,64 @@ export interface PrivilegeFinding {
 }
 
 /**
- * Mocks identifying if an address is an EOA vs Multisig/Contract.
- * In production, this would query the chain (e.g. eth_getCode == '0x').
+ * Classifies an address as an EOA (single-sig / externally-owned account) vs a
+ * contract/multisig.
+ *
+ * PLACEHOLDER HEURISTIC: with no chain access this can only guess from the
+ * address label (the substrings "eoa"/"multi"). It is **not** an on-chain
+ * `getCode`/threshold check and must not be trusted as evidence. Provide real
+ * data via {@link AuthorityClassification} (`knownMultisigs`/`knownContracts`)
+ * to override the guess; live recon (thirdweb `getCode`) should supply those
+ * sets. When nothing is known it defaults to EOA so the worst case is surfaced
+ * for manual confirmation rather than silently cleared.
+ */
+export function isLikelyEOA(address: string, opts: AuthorityClassification = {}): boolean {
+  const addr = address.trim().toLowerCase();
+  const known = (list?: string[]) => (list ?? []).map((a) => a.trim().toLowerCase());
+  // Real, operator-supplied facts win over the heuristic.
+  if (known(opts.knownMultisigs).includes(addr)) return false;
+  if (known(opts.knownContracts).includes(addr)) return false;
+  if (known(opts.knownEoas).includes(addr)) return true;
+  // Heuristic fallback (placeholder only — see doc comment).
+  if (addr.includes("eoa")) return true;
+  if (addr.includes("multi")) return false;
+  // Default to EOA for worst-case scanning.
+  return true;
+}
+
+/**
+ * Backwards-compatible alias for {@link isLikelyEOA}. Retained so existing
+ * callers keep working; prefer `isLikelyEOA` (and pass real classification data).
+ * @deprecated Use {@link isLikelyEOA} with a {@link AuthorityClassification}.
  */
 export function isEOAMock(address: string): boolean {
-  // Mock logic: 0xEOA... -> true, 0xMULTI... -> false
-  if (address.toLowerCase().includes('eoa')) return true;
-  if (address.toLowerCase().includes('multi')) return false;
-  // Default to EOA for worst-case scanning
-  return true;
+  return isLikelyEOA(address);
+}
+
+/** Operator-supplied authority classification facts (override the heuristic). */
+export interface AuthorityClassification {
+  /** Addresses known to be multisigs (treated as not-EOA). */
+  knownMultisigs?: string[];
+  /** Addresses known to be contracts (treated as not-EOA). */
+  knownContracts?: string[];
+  /** Addresses known to be single-sig EOAs (treated as EOA). */
+  knownEoas?: string[];
 }
 
 /**
  * Scans an object (representing contract state/config) for known authority fields.
  */
-export function scanAuthorities(contractName: string, state: Record<string, any>): AuthorityFinding[] {
+export function scanAuthorities(
+  contractName: string,
+  state: Record<string, any>,
+  opts: AuthorityClassification = {},
+): AuthorityFinding[] {
   const findings: AuthorityFinding[] = [];
 
   for (const field of ADMIN_ANALYSIS_CONFIG.authorityFields) {
     if (state[field]) {
       const value = state[field].toString();
-      const isEOA = isEOAMock(value);
+      const isEOA = isLikelyEOA(value, opts);
       
       let riskLevel: 'LOW' | 'MEDIUM' | 'HIGH' | 'CRITICAL' = 'LOW';
       let description = `Authority field '${field}' found.`;

@@ -1,0 +1,33 @@
+{
+  "admin": {
+    "contract": "VaultContract",
+    "state": {
+      "upgradeAuthority": "0xEOA1234567890abcdef1234567890abcdef12345",
+      "owner": "0xMULTI0000000000000000000000000000000000"
+    },
+    "abi": [
+      { "name": "emergencyWithdraw", "modifiers": [] },
+      { "name": "execute", "modifiers": [] },
+      { "name": "mint", "modifiers": ["onlyOwner"] }
+    ],
+    "classification": {
+      "knownMultisigs": ["0xMULTI0000000000000000000000000000000000"]
+    }
+  },
+  "encoding": {
+    "fields": [
+      { "name": "role", "value": "YWRtaW4=" },
+      { "name": "init_payload", "value": "0x61646d696e" }
+    ]
+  },
+  "data": {
+    "pre": { "upgradeAuthority": "0x1111111111111111111111111111111111111111", "roles": ["minter"] },
+    "post": { "upgradeAuthority": "0x9999999999999999999999999999999999999999", "roles": ["minter", "upgrader_secret_role"] },
+    "uuids": ["a", "a", "b"]
+  },
+  "economic": {
+    "feeRateBps": 100,
+    "swapAmounts": ["1", "1000"],
+    "probeVulnerableMint": true
+  }
+}

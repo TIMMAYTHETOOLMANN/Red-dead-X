@@ -16,6 +16,21 @@ import { EvmAnalysisResult, EvmFinding } from "./evm_analyze";
 
 export type Vm = "evm" | "svm";
 
+/**
+ * Engines that can contribute to the unified stream. The two static engines
+ * (Solana IDL, EVM ABI) are joined by the auxiliary analyzers (admin/authority,
+ * encoding, data-state, economic invariant) and by the correlation pass that
+ * links findings into exploit chains.
+ */
+export type UnifiedEngine =
+  | "svm-static"
+  | "evm-static"
+  | "admin-static"
+  | "encoding-static"
+  | "data-static"
+  | "invariant-sim"
+  | "correlation";
+
 export interface ForensicTarget {
   program: string;
   chain: string;
@@ -27,7 +42,7 @@ export interface ForensicTarget {
 
 export interface UnifiedFinding {
   id: string;
-  engine: "svm-static" | "evm-static";
+  engine: UnifiedEngine;
   lane: string;
   severity: Severity;
   confidence: string;
@@ -42,6 +57,17 @@ export interface UnifiedFinding {
   title: string;
   detail: string;
   recommendation: string;
+  /**
+   * Chains this finding applies to. Set by the cross-chain collapse pass when
+   * the same seam is observed on more than one chain ("same seam, N chains").
+   * Absent for ordinary single-chain findings.
+   */
+  chains?: string[];
+  /**
+   * Ids of the findings a correlation/exploit-chain finding was composed from.
+   * Absent for primary (non-composite) findings.
+   */
+  components?: string[];
 }
 
 export interface ForensicEntry {
@@ -136,9 +162,11 @@ function findingsTable(findings: UnifiedFinding[]): string {
   ];
   for (const f of findings) {
     const loc = f.subLocator ? `${f.locator}.${f.subLocator}` : f.locator;
+    const span =
+      f.chains && f.chains.length > 1 ? ` _(same seam, ${f.chains.length} chains: ${f.chains.join(", ")})_` : "";
     lines.push(
       `| ${f.risk} | ${f.payoutWeight} | ${f.severity} | ${f.confidence} | ${f.lane} | ` +
-        `\`${loc}\` | ${f.vulnTypeId ?? "—"} | ${f.title} |`,
+        `\`${loc}\` | ${f.vulnTypeId ?? "—"} | ${f.title}${span} |`,
     );
   }
   return lines.join("\n") + "\n";
@@ -242,6 +270,8 @@ export function toSarif(report: ForensicReport): unknown {
           risk: f.risk,
           payoutWeight: f.payoutWeight,
           vulnTypeId: f.vulnTypeId,
+          ...(f.chains ? { chains: f.chains } : {}),
+          ...(f.components ? { components: f.components } : {}),
         },
       });
     }
