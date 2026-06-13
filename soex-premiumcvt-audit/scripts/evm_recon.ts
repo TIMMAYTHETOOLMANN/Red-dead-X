@@ -1,10 +1,11 @@
 import "dotenv/config";
 import fs from "fs";
 import { createThirdwebClient, defineChain, getContract } from "thirdweb";
-import { resolveContractAbi } from "thirdweb/contract";
+import { resolveContractAbi, getBytecode } from "thirdweb/contract";
 import { resolveImplementation } from "thirdweb/utils";
 import { normalizeAbi } from "./lib/evm_abi";
 import { analyzeAbi } from "./lib/evm_analyze";
+import { analyzeBytecode } from "./lib/bytecode_fingerprint";
 import { resolveChain, isEvm } from "./lib/chains";
 import {
   assertInScope,
@@ -14,6 +15,7 @@ import {
 import {
   assembleReport,
   entryFromEvm,
+  fromBytecodeFinding,
   toMarkdown,
   toSarif,
 } from "./lib/forensic_report";
@@ -121,6 +123,23 @@ async function main() {
   const abi = normalizeAbi(abiRaw as unknown[]);
   const analysis = analyzeAbi(abi, payoutBands);
 
+  // --- compiler fingerprint over the deployed bytecode ---------------------
+  // Read the runtime bytecode of the *implementation* (proxies hold no logic of
+  // their own) and lift its compiler fingerprint, matching it against the
+  // known-compiler-bug signature DB. Read-only: getBytecode is eth_getCode.
+  const bytecodeTarget = implementation.isProxy ? implementation.address : address;
+  let bytecodeAnalysis;
+  try {
+    const codeContract = implementation.isProxy
+      ? getContract({ client, chain: twChain, address: implementation.address })
+      : contract;
+    const bytecode = await getBytecode(codeContract);
+    bytecodeAnalysis = analyzeBytecode(bytecode, payoutBands);
+  } catch {
+    // Bytecode unavailable (e.g. node rejected eth_getCode) — skip the lane.
+    bytecodeAnalysis = undefined;
+  }
+
   const target = {
     program: programKey || "(unscoped)",
     chain: chain.key,
@@ -128,7 +147,11 @@ async function main() {
     address,
     label: implementation.isProxy ? `proxy → ${implementation.address}` : "contract",
   };
-  const report = assembleReport([entryFromEvm(target, analysis)]);
+  const entry = entryFromEvm(target, analysis);
+  if (bytecodeAnalysis) {
+    entry.findings.push(...bytecodeAnalysis.findings.map(fromBytecodeFinding));
+  }
+  const report = assembleReport([entry]);
 
   const base = writeEvidence("evm-recon", {
     collectedAt: new Date().toISOString(),
@@ -137,12 +160,16 @@ async function main() {
     chainId: chain.chainId,
     address,
     implementation,
+    compiler: bytecodeAnalysis
+      ? { target: bytecodeTarget, ...bytecodeAnalysis.fingerprint }
+      : null,
     functionCount: analysis.functionCount,
     severityCounts: analysis.severityCounts,
     laneCounts: analysis.laneCounts,
     maxRisk: analysis.maxRisk,
     totalPayoutWeight: analysis.totalPayoutWeight,
     findings: analysis.findings,
+    compilerFindings: bytecodeAnalysis?.findings ?? [],
   });
   fs.writeFileSync(`${base}.sarif`, JSON.stringify(toSarif(report), null, 2));
   fs.writeFileSync(`${base}.md`, toMarkdown(report));
@@ -154,6 +181,13 @@ async function main() {
       `Proxy: ${implementation.isProxy ? implementation.address : "no"}`,
   );
   console.log("Severity:", analysis.severityCounts);
+  if (bytecodeAnalysis) {
+    const fp = bytecodeAnalysis.fingerprint;
+    console.log(
+      `Compiler: ${fp.kind}${fp.version ? ` ${fp.version}` : " (version unknown)"}  ` +
+        `Compiler findings: ${bytecodeAnalysis.findings.length}`,
+    );
+  }
   if (analysis.findings.length > 0) {
     console.table(
       analysis.findings.map((f) => ({
