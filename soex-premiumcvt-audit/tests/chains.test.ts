@@ -4,8 +4,10 @@ import {
   chainByChainId,
   chainByKey,
   evmChains,
+  ingestionSource,
   isEvm,
   resolveChain,
+  usesP2p,
 } from "../scripts/lib/chains";
 
 test("chainByKey resolves known chains case-insensitively", () => {
@@ -36,4 +38,22 @@ test("evmChains returns only EVM chains, each with a thirdweb chain id", () => {
     assert.equal(c.vm, "evm");
     assert.equal(typeof c.thirdwebChainId, "number");
   }
+});
+
+test("ingestionSource defaults to rpc when no descriptor is set", () => {
+  assert.equal(ingestionSource(chainByKey("ethereum")!), "rpc");
+  assert.equal(usesP2p(chainByKey("ethereum")!), false);
+});
+
+test("ingestionSource honours an explicit p2p/hybrid descriptor", () => {
+  const p2p = {
+    ...chainByKey("ethereum")!,
+    ingestion: { source: "p2p" as const, bootnodes: ["enode://abc@1.2.3.4:30303"] },
+  };
+  assert.equal(ingestionSource(p2p), "p2p");
+  assert.equal(usesP2p(p2p), true);
+
+  const hybrid = { ...chainByKey("base")!, ingestion: { source: "hybrid" as const } };
+  assert.equal(ingestionSource(hybrid), "hybrid");
+  assert.equal(usesP2p(hybrid), true);
 });

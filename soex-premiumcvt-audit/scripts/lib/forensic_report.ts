@@ -13,18 +13,20 @@
 
 import { AnalysisResult, Finding, Severity } from "./analyze";
 import { EvmAnalysisResult, EvmFinding } from "./evm_analyze";
+import { BytecodeFinding } from "./bytecode_fingerprint";
 
 export type Vm = "evm" | "svm";
 
 /**
  * Engines that can contribute to the unified stream. The two static engines
  * (Solana IDL, EVM ABI) are joined by the auxiliary analyzers (admin/authority,
- * encoding, data-state, economic invariant) and by the correlation pass that
- * links findings into exploit chains.
+ * encoding, data-state, economic invariant), the bytecode compiler-fingerprint
+ * lane, and by the correlation pass that links findings into exploit chains.
  */
 export type UnifiedEngine =
   | "svm-static"
   | "evm-static"
+  | "bytecode-static"
   | "admin-static"
   | "encoding-static"
   | "data-static"
@@ -68,6 +70,13 @@ export interface UnifiedFinding {
    * Absent for primary (non-composite) findings.
    */
   components?: string[];
+  /**
+   * Historical breach-genealogy lineage for this finding: an ordered path of
+   * addresses/contracts linking a known-compromised entity to this target (e.g.
+   * `["0xBreached2021", "0xRelayWallet", "0xThisTarget"]`). Populated by the
+   * Phase-3 historical-tracing pass; absent for findings with no known lineage.
+   */
+  genealogy?: string[];
 }
 
 export interface ForensicEntry {
@@ -126,6 +135,25 @@ export function fromEvmFinding(f: EvmFinding): UnifiedFinding {
   };
 }
 
+/** Normalize a bytecode compiler-fingerprint finding into the unified shape. */
+export function fromBytecodeFinding(f: BytecodeFinding): UnifiedFinding {
+  return {
+    id: f.id,
+    engine: "bytecode-static",
+    lane: f.lane,
+    severity: f.severity,
+    confidence: f.confidence,
+    risk: f.risk,
+    payoutWeight: f.payoutWeight,
+    vulnTypeId: f.vulnTypeId,
+    locator: f.locator,
+    subLocator: null,
+    title: f.title,
+    detail: f.detail,
+    recommendation: f.recommendation,
+  };
+}
+
 /** Build a forensic entry from a Solana analysis result. */
 export function entryFromSolana(
   target: ForensicTarget,
@@ -172,6 +200,113 @@ function findingsTable(findings: UnifiedFinding[]): string {
   return lines.join("\n") + "\n";
 }
 
+// --- attack-path graph (machine-readable, Cytoscape/D3-compatible) ----------
+
+export interface GraphNode {
+  /** Stable node id (a finding id, or a chain/target/genealogy address). */
+  data: { id: string; label: string; type: string; severity?: Severity };
+}
+
+export interface GraphEdge {
+  data: { id: string; source: string; target: string; relation: string };
+}
+
+export interface AttackPathGraph {
+  nodes: GraphNode[];
+  edges: GraphEdge[];
+}
+
+/**
+ * Derive an interactive attack-path graph from the report. Nodes are findings;
+ * edges encode the two kinds of paths already modelled in the unified stream:
+ *   - `enables` — a correlation/exploit-chain finding (`components`) points back
+ *     to each finding it was composed from (A → B exploit chains).
+ *   - `lineage` — a breach-genealogy path (`genealogy`) is rendered as a chain of
+ *     address nodes leading into the finding (historical compromise → target).
+ * The shape is Cytoscape.js `elements` (also trivially consumable by D3).
+ */
+export function attackPathGraph(report: ForensicReport): AttackPathGraph {
+  const nodes = new Map<string, GraphNode>();
+  const edges: GraphEdge[] = [];
+
+  const addNode = (n: GraphNode) => {
+    if (!nodes.has(n.data.id)) nodes.set(n.data.id, n);
+  };
+
+  for (const entry of report.entries) {
+    for (const f of entry.findings) {
+      addNode({
+        data: {
+          id: f.id,
+          label: f.title,
+          type: `finding:${f.engine}`,
+          severity: f.severity,
+        },
+      });
+
+      // Exploit-chain edges: composite finding → each component finding.
+      for (const c of f.components ?? []) {
+        addNode({ data: { id: c, label: c, type: "finding" } });
+        edges.push({
+          data: { id: `${f.id}->${c}`, source: f.id, target: c, relation: "enables" },
+        });
+      }
+
+      // Breach-genealogy edges: address lineage flowing into the finding.
+      const lineage = f.genealogy ?? [];
+      for (let i = 0; i < lineage.length; i++) {
+        const addr = lineage[i];
+        addNode({ data: { id: addr, label: addr, type: "address" } });
+        const next = i + 1 < lineage.length ? lineage[i + 1] : f.id;
+        edges.push({
+          data: {
+            id: `${addr}->${next}`,
+            source: addr,
+            target: next,
+            relation: "lineage",
+          },
+        });
+      }
+    }
+  }
+
+  return { nodes: [...nodes.values()], edges };
+}
+
+function genealogySection(report: ForensicReport): string {
+  const paths: string[] = [];
+  for (const entry of report.entries) {
+    for (const f of entry.findings) {
+      if (f.genealogy && f.genealogy.length > 0) {
+        paths.push(`- \`${f.locator}\` ← ${f.genealogy.join(" → ")} _(${f.title})_`);
+      }
+    }
+  }
+  let md = `\n## Breach genealogy paths\n\n`;
+  if (paths.length === 0) {
+    md +=
+      "_No historical breach lineage linked to these targets yet._ " +
+      "Populate from the historical-tracing DB (see `db/`) to escalate targets " +
+      "that share lineage with known-compromised contracts.\n";
+  } else {
+    md += paths.join("\n") + "\n";
+  }
+  return md;
+}
+
+function attackPathGraphSection(report: ForensicReport): string {
+  const graph = attackPathGraph(report);
+  return (
+    `\n## Attack-path graph\n\n` +
+    `Machine-readable graph (Cytoscape.js \`elements\` / D3-compatible): ` +
+    `${graph.nodes.length} nodes, ${graph.edges.length} edges. ` +
+    `Render to visualise how an enabler or a compromised wallet reaches a core seam.\n\n` +
+    "```json\n" +
+    JSON.stringify({ nodes: graph.nodes, edges: graph.edges }, null, 2) +
+    "\n```\n"
+  );
+}
+
 export function toMarkdown(report: ForensicReport): string {
   const totalFindings = report.entries.reduce((s, e) => s + e.findings.length, 0);
   let md =
@@ -184,6 +319,8 @@ export function toMarkdown(report: ForensicReport): string {
     md += `\n## ${entryHeading(entry.target)}\n\n`;
     md += findingsTable(entry.findings);
   }
+  md += genealogySection(report);
+  md += attackPathGraphSection(report);
   return md;
 }
 
@@ -272,6 +409,7 @@ export function toSarif(report: ForensicReport): unknown {
           vulnTypeId: f.vulnTypeId,
           ...(f.chains ? { chains: f.chains } : {}),
           ...(f.components ? { components: f.components } : {}),
+          ...(f.genealogy ? { genealogy: f.genealogy } : {}),
         },
       });
     }
