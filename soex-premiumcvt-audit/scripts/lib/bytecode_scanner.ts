@@ -66,8 +66,8 @@ export function scanEvmBytecode(bytecodeHex: string): BytecodeFinding[] {
   // If detected, analyze solidity version vulnerabilities
   if (detectedSolcVersion) {
     const parts = detectedSolcVersion.split(".").map(Number);
-    if (parts.length >= 3) {
-      const [major, minor, patch] = parts;
+    if (parts.length >= 2) {
+      const [major, minor] = parts;
       
       // Vulnerability: Pre-0.8.0 default overflow/underflow
       if (major === 0 && minor < 8) {
@@ -130,7 +130,7 @@ export function scanEvmBytecode(bytecodeHex: string): BytecodeFinding[] {
         compiler: "Vyper",
         versionDetected: detectedVyperVersion,
         severity: "critical",
-        confidence: "high",
+        confidence: "likely",
         title: "Critical Compiler: Vyper Re-entrancy Lock Failure",
         detail: `The contract was compiled with Vyper ${detectedVyperVersion}, which is vulnerable to re-entrancy lock failure ` +
                 `where cross-calling contracts can bypass @nonreentrant decorator protections under certain configurations.`,

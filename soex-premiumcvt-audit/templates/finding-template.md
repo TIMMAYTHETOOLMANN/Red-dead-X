@@ -27,6 +27,18 @@ Instruction(s): <mint_cvt / burn_hvt / claim_rewards / etc.>
 ## Actual behavior
 <What happened instead.>
 
+## Visual Graph (Attack Path)
+```mermaid
+graph TD
+  A[Abandoned / Compromised Wallet / Backdoor Admin] -->|1. Direct Private Key Leak / Reuse| B(Target Vulnerable Contract / Program)
+  B -->|2. Exploit Invariant / Drain Funds| C{Vault Custody}
+```
+
+## Historical Breach Genealogy
+- **Direct Breach Risk:** <yes/no - list breached addresses directly involved>
+- **Indirect Breach Path:** `Target Address` <--> `Intermediate Relays` <--> `Breached Node` (Total hops: N)
+- **Tracing Evidence Logs:** See relational schema indexes and transaction graph mappings for confirmation.
+
 ## Evidence
 - Logs: `evidence/...`
 - Test: `tests/...`

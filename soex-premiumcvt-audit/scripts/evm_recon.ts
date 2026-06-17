@@ -4,8 +4,11 @@ import { createThirdwebClient, defineChain, getContract } from "thirdweb";
 import { resolveContractAbi } from "thirdweb/contract";
 import { resolveImplementation } from "thirdweb/utils";
 import { normalizeAbi } from "./lib/evm_abi";
-import { analyzeAbi } from "./lib/evm_analyze";
+import { analyzeAbi, EvmLane } from "./lib/evm_analyze";
 import { resolveChain, isEvm } from "./lib/chains";
+import { scanEvmBytecode } from "./lib/bytecode_scanner";
+import { payoutMidpoint, PayoutBand } from "./lib/taxonomy";
+import { riskScore, Severity } from "./lib/analyze";
 import {
   assertInScope,
   loadRegistry,
@@ -87,7 +90,7 @@ async function main() {
 
   // Scope-compliance gate (refuses out-of-scope targets, like the SVM guardrails).
   const programKey = (process.env.BUGRAP_PROGRAM ?? "").trim();
-  let payoutBands;
+  let payoutBands: PayoutBand[] | undefined;
   if (programKey) {
     const registryPath =
       (process.env.REGISTRY_PATH ?? "").trim() || "./targets/bugrap-programs.json";
@@ -133,10 +136,6 @@ async function main() {
     bytecodeHex = process.env.EVM_BYTECODE.trim();
   }
 
-  const { scanEvmBytecode } = await import("./lib/bytecode_scanner");
-  const { payoutMidpoint } = await import("./lib/taxonomy");
-  const { riskScore } = await import("./lib/analyze");
-
   const bytecodeFindings = scanEvmBytecode(bytecodeHex).map((bf) => {
     const pWeight = payoutMidpoint(bf.severity, payoutBands);
     return {
@@ -157,8 +156,10 @@ async function main() {
   if (bytecodeFindings.length > 0) {
     analysis.findings = [...analysis.findings, ...bytecodeFindings];
     for (const f of bytecodeFindings) {
-      analysis.severityCounts[f.severity] = (analysis.severityCounts[f.severity] || 0) + 1;
-      analysis.laneCounts[f.lane] = (analysis.laneCounts[f.lane] || 0) + 1;
+      const s = f.severity as Severity;
+      const l = f.lane as EvmLane;
+      analysis.severityCounts[s] = (analysis.severityCounts[s] || 0) + 1;
+      analysis.laneCounts[l] = (analysis.laneCounts[l] || 0) + 1;
       analysis.maxRisk = Math.max(analysis.maxRisk, f.risk);
       analysis.totalPayoutWeight += f.payoutWeight;
     }
