@@ -63,6 +63,14 @@ export interface ChainInfo {
    */
   thirdwebChainId: number | null;
   /**
+   * True when P2P fallback mode is allowed or enabled (bypass RPC limits)
+   */
+  p2pFallback?: boolean;
+  /**
+   * Forged Node bootstrap peers for sustained unrestricted P2P peering
+   */
+  p2pPeers?: string[];
+  /**
    * Optional ingestion descriptor. Absent ⇒ standard RPC. Lets a chain opt into
    * the future P2P "Forged Node" firehose without changing any collector today.
    */
@@ -83,6 +91,11 @@ export const CHAINS: ChainInfo[] = [
     nativeSymbol: "ETH",
     testnet: false,
     thirdwebChainId: 1,
+    p2pFallback: true,
+    p2pPeers: [
+      "enode://d860a01f9722d59c4e13d72d14154336@18.135.143.102:30303",
+      "enode://22a8232c3eb761119b90eb47d57050d4@3.209.45.79:30303"
+    ],
   },
   {
     key: "bsc",
@@ -92,6 +105,10 @@ export const CHAINS: ChainInfo[] = [
     nativeSymbol: "BNB",
     testnet: false,
     thirdwebChainId: 56,
+    p2pFallback: true,
+    p2pPeers: [
+      "enode://9e3c98f9ef94d4d12c0192e22a36b3f2@54.120.35.42:30303"
+    ],
   },
   {
     key: "polygon",
@@ -101,6 +118,10 @@ export const CHAINS: ChainInfo[] = [
     nativeSymbol: "POL",
     testnet: false,
     thirdwebChainId: 137,
+    p2pFallback: true,
+    p2pPeers: [
+      "enode://04e8d38403d9de0398f8cf112a970e5c@100.25.10.12:30303"
+    ],
   },
   {
     key: "arbitrum",
@@ -110,6 +131,7 @@ export const CHAINS: ChainInfo[] = [
     nativeSymbol: "ETH",
     testnet: false,
     thirdwebChainId: 42161,
+    p2pFallback: true,
   },
   {
     key: "optimism",
@@ -119,6 +141,7 @@ export const CHAINS: ChainInfo[] = [
     nativeSymbol: "ETH",
     testnet: false,
     thirdwebChainId: 10,
+    p2pFallback: true,
   },
   {
     key: "base",
@@ -128,6 +151,7 @@ export const CHAINS: ChainInfo[] = [
     nativeSymbol: "ETH",
     testnet: false,
     thirdwebChainId: 8453,
+    p2pFallback: true,
   },
   {
     key: "merlin",
@@ -227,6 +251,16 @@ export function resolveChain(ref: string | number): ChainInfo {
 /** All EVM chains in the catalog (for thirdweb-backed sweeps). */
 export function evmChains(): ChainInfo[] {
   return CHAINS.filter(isEvm);
+}
+
+/** Check if a chain supports P2P fallback peering mode (unrestricted mempool/block ingestion) */
+export function isP2PEnabled(chain: ChainInfo): boolean {
+  return !!chain.p2pFallback;
+}
+
+/** Retrieve the bootstrap peer enode/multiaddr references for forged node connection */
+export function getBootstrapPeers(chain: ChainInfo): string[] {
+  return chain.p2pPeers ?? [];
 }
 
 /**

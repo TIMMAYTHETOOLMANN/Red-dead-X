@@ -7,6 +7,8 @@ import {
   ingestionSource,
   isEvm,
   resolveChain,
+  isP2PEnabled,
+  getBootstrapPeers,
   usesP2p,
 } from "../scripts/lib/chains";
 
@@ -38,6 +40,16 @@ test("evmChains returns only EVM chains, each with a thirdweb chain id", () => {
     assert.equal(c.vm, "evm");
     assert.equal(typeof c.thirdwebChainId, "number");
   }
+});
+
+test("isP2PEnabled and getBootstrapPeers support P2P fallback", () => {
+  const eth = chainByKey("ethereum")!;
+  const sol = chainByKey("solana")!;
+  assert.equal(isP2PEnabled(eth), true);
+  assert.equal(isP2PEnabled(sol), false);
+  const peers = getBootstrapPeers(eth);
+  assert.ok(peers.length > 0);
+  assert.ok(peers[0].startsWith("enode://"));
 });
 
 test("ingestionSource defaults to rpc when no descriptor is set", () => {

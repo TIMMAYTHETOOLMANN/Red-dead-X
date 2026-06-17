@@ -4,9 +4,12 @@ import { createThirdwebClient, defineChain, getContract } from "thirdweb";
 import { resolveContractAbi, getBytecode } from "thirdweb/contract";
 import { resolveImplementation } from "thirdweb/utils";
 import { normalizeAbi } from "./lib/evm_abi";
-import { analyzeAbi } from "./lib/evm_analyze";
+import { analyzeAbi, EvmLane } from "./lib/evm_analyze";
 import { analyzeBytecode } from "./lib/bytecode_fingerprint";
 import { resolveChain, isEvm } from "./lib/chains";
+import { scanEvmBytecode } from "./lib/bytecode_scanner";
+import { payoutMidpoint, PayoutBand } from "./lib/taxonomy";
+import { riskScore, Severity } from "./lib/analyze";
 import {
   assertInScope,
   loadRegistry,
@@ -89,7 +92,7 @@ async function main() {
 
   // Scope-compliance gate (refuses out-of-scope targets, like the SVM guardrails).
   const programKey = (process.env.BUGRAP_PROGRAM ?? "").trim();
-  let payoutBands;
+  let payoutBands: PayoutBand[] | undefined;
   if (programKey) {
     const registryPath =
       (process.env.REGISTRY_PATH ?? "").trim() || "./targets/bugrap-programs.json";
@@ -123,22 +126,57 @@ async function main() {
   const abi = normalizeAbi(abiRaw as unknown[]);
   const analysis = analyzeAbi(abi, payoutBands);
 
-  // --- compiler fingerprint over the deployed bytecode ---------------------
-  // Read the runtime bytecode of the *implementation* (proxies hold no logic of
-  // their own) and lift its compiler fingerprint, matching it against the
-  // known-compiler-bug signature DB. Read-only: getBytecode is eth_getCode.
-  const bytecodeTarget = implementation.isProxy ? implementation.address : address;
-  let bytecodeAnalysis;
-  try {
-    const codeContract = implementation.isProxy
-      ? getContract({ client, chain: twChain, address: implementation.address })
-      : contract;
-    const bytecode = await getBytecode(codeContract);
-    bytecodeAnalysis = analyzeBytecode(bytecode, payoutBands);
-  } catch {
-    // Bytecode unavailable (e.g. node rejected eth_getCode) — skip the lane.
-    bytecodeAnalysis = undefined;
+// --- compiler fingerprint over the deployed bytecode ---------------------
+// Read the runtime bytecode of the *implementation* (proxies hold no logic of
+// their own) and lift its compiler fingerprint, matching it against the
+// known-compiler-bug signature DB. Read-only: getBytecode is eth_getCode.
+const bytecodeTarget = implementation.isProxy ? implementation.address : address;
+let bytecodeAnalysis;
+let bytecodeHex = "";
+try {
+  const codeContract = implementation.isProxy
+    ? getContract({ client, chain: twChain, address: implementation.address })
+    : contract;
+  bytecodeHex = await getBytecode(codeContract);
+  bytecodeAnalysis = analyzeBytecode(bytecodeHex, payoutBands);
+} catch {
+  // Bytecode unavailable (e.g. node rejected eth_getCode) — skip the lane.
+  bytecodeAnalysis = undefined;
+}
+
+if (!bytecodeHex && process.env.EVM_BYTECODE) {
+  bytecodeHex = process.env.EVM_BYTECODE.trim();
+}
+
+const bytecodeFindings = scanEvmBytecode(bytecodeHex).map((bf) => {
+  const pWeight = payoutMidpoint(bf.severity, payoutBands);
+  return {
+    id: bf.id,
+    lane: "EB-upgradeability" as const, // Map to EVM upgradeability / compiler lane
+    severity: bf.severity,
+    confidence: bf.confidence,
+    risk: riskScore(bf.severity, bf.confidence),
+    payoutWeight: pWeight,
+    vulnTypeId: "smart-contract/access-control",
+    function: "compiler-metadata",
+    title: bf.title,
+    detail: bf.detail,
+    recommendation: bf.recommendation,
+  };
+});
+
+if (bytecodeFindings.length > 0) {
+  analysis.findings = [...analysis.findings, ...bytecodeFindings];
+  for (const f of bytecodeFindings) {
+    const s = f.severity as Severity;
+    const l = f.lane as EvmLane;
+    analysis.severityCounts[s] = (analysis.severityCounts[s] || 0) + 1;
+    analysis.laneCounts[l] = (analysis.laneCounts[l] || 0) + 1;
+    analysis.maxRisk = Math.max(analysis.maxRisk, f.risk);
+    analysis.totalPayoutWeight += f.payoutWeight;
   }
+  analysis.findings.sort((a, b) => b.payoutWeight - a.payoutWeight || b.risk - a.risk);
+}
 
   const target = {
     program: programKey || "(unscoped)",
