@@ -1,10 +1,11 @@
 import "dotenv/config";
 import fs from "fs";
 import { createThirdwebClient, defineChain, getContract } from "thirdweb";
-import { resolveContractAbi } from "thirdweb/contract";
+import { resolveContractAbi, getBytecode } from "thirdweb/contract";
 import { resolveImplementation } from "thirdweb/utils";
 import { normalizeAbi } from "./lib/evm_abi";
 import { analyzeAbi, EvmLane } from "./lib/evm_analyze";
+import { analyzeBytecode } from "./lib/bytecode_fingerprint";
 import { resolveChain, isEvm } from "./lib/chains";
 import { scanEvmBytecode } from "./lib/bytecode_scanner";
 import { payoutMidpoint, PayoutBand } from "./lib/taxonomy";
@@ -17,6 +18,7 @@ import {
 import {
   assembleReport,
   entryFromEvm,
+  fromBytecodeFinding,
   toMarkdown,
   toSarif,
 } from "./lib/forensic_report";
@@ -124,47 +126,57 @@ async function main() {
   const abi = normalizeAbi(abiRaw as unknown[]);
   const analysis = analyzeAbi(abi, payoutBands);
 
-  // --- read-only bytecode static scan (fingerprint compiler bugs) ----------
-  let bytecodeHex = "";
-  try {
-    const { getBytecode } = await import("thirdweb/contract");
-    bytecodeHex = await getBytecode(contract);
-  } catch {
-    // fallback or offline mock support
-  }
-  if (!bytecodeHex && process.env.EVM_BYTECODE) {
-    bytecodeHex = process.env.EVM_BYTECODE.trim();
-  }
+// --- compiler fingerprint over the deployed bytecode ---------------------
+// Read the runtime bytecode of the *implementation* (proxies hold no logic of
+// their own) and lift its compiler fingerprint, matching it against the
+// known-compiler-bug signature DB. Read-only: getBytecode is eth_getCode.
+const bytecodeTarget = implementation.isProxy ? implementation.address : address;
+let bytecodeAnalysis;
+let bytecodeHex = "";
+try {
+  const codeContract = implementation.isProxy
+    ? getContract({ client, chain: twChain, address: implementation.address })
+    : contract;
+  bytecodeHex = await getBytecode(codeContract);
+  bytecodeAnalysis = analyzeBytecode(bytecodeHex, payoutBands);
+} catch {
+  // Bytecode unavailable (e.g. node rejected eth_getCode) — skip the lane.
+  bytecodeAnalysis = undefined;
+}
 
-  const bytecodeFindings = scanEvmBytecode(bytecodeHex).map((bf) => {
-    const pWeight = payoutMidpoint(bf.severity, payoutBands);
-    return {
-      id: bf.id,
-      lane: "EB-upgradeability" as const, // Map to EVM upgradeability / compiler lane
-      severity: bf.severity,
-      confidence: bf.confidence,
-      risk: riskScore(bf.severity, bf.confidence),
-      payoutWeight: pWeight,
-      vulnTypeId: "smart-contract/access-control",
-      function: "compiler-metadata",
-      title: bf.title,
-      detail: bf.detail,
-      recommendation: bf.recommendation,
-    };
-  });
+if (!bytecodeHex && process.env.EVM_BYTECODE) {
+  bytecodeHex = process.env.EVM_BYTECODE.trim();
+}
 
-  if (bytecodeFindings.length > 0) {
-    analysis.findings = [...analysis.findings, ...bytecodeFindings];
-    for (const f of bytecodeFindings) {
-      const s = f.severity as Severity;
-      const l = f.lane as EvmLane;
-      analysis.severityCounts[s] = (analysis.severityCounts[s] || 0) + 1;
-      analysis.laneCounts[l] = (analysis.laneCounts[l] || 0) + 1;
-      analysis.maxRisk = Math.max(analysis.maxRisk, f.risk);
-      analysis.totalPayoutWeight += f.payoutWeight;
-    }
-    analysis.findings.sort((a, b) => b.payoutWeight - a.payoutWeight || b.risk - a.risk);
+const bytecodeFindings = scanEvmBytecode(bytecodeHex).map((bf) => {
+  const pWeight = payoutMidpoint(bf.severity, payoutBands);
+  return {
+    id: bf.id,
+    lane: "EB-upgradeability" as const, // Map to EVM upgradeability / compiler lane
+    severity: bf.severity,
+    confidence: bf.confidence,
+    risk: riskScore(bf.severity, bf.confidence),
+    payoutWeight: pWeight,
+    vulnTypeId: "smart-contract/access-control",
+    function: "compiler-metadata",
+    title: bf.title,
+    detail: bf.detail,
+    recommendation: bf.recommendation,
+  };
+});
+
+if (bytecodeFindings.length > 0) {
+  analysis.findings = [...analysis.findings, ...bytecodeFindings];
+  for (const f of bytecodeFindings) {
+    const s = f.severity as Severity;
+    const l = f.lane as EvmLane;
+    analysis.severityCounts[s] = (analysis.severityCounts[s] || 0) + 1;
+    analysis.laneCounts[l] = (analysis.laneCounts[l] || 0) + 1;
+    analysis.maxRisk = Math.max(analysis.maxRisk, f.risk);
+    analysis.totalPayoutWeight += f.payoutWeight;
   }
+  analysis.findings.sort((a, b) => b.payoutWeight - a.payoutWeight || b.risk - a.risk);
+}
 
   const target = {
     program: programKey || "(unscoped)",
@@ -173,7 +185,11 @@ async function main() {
     address,
     label: implementation.isProxy ? `proxy → ${implementation.address}` : "contract",
   };
-  const report = assembleReport([entryFromEvm(target, analysis)]);
+  const entry = entryFromEvm(target, analysis);
+  if (bytecodeAnalysis) {
+    entry.findings.push(...bytecodeAnalysis.findings.map(fromBytecodeFinding));
+  }
+  const report = assembleReport([entry]);
 
   const base = writeEvidence("evm-recon", {
     collectedAt: new Date().toISOString(),
@@ -182,12 +198,16 @@ async function main() {
     chainId: chain.chainId,
     address,
     implementation,
+    compiler: bytecodeAnalysis
+      ? { target: bytecodeTarget, ...bytecodeAnalysis.fingerprint }
+      : null,
     functionCount: analysis.functionCount,
     severityCounts: analysis.severityCounts,
     laneCounts: analysis.laneCounts,
     maxRisk: analysis.maxRisk,
     totalPayoutWeight: analysis.totalPayoutWeight,
     findings: analysis.findings,
+    compilerFindings: bytecodeAnalysis?.findings ?? [],
   });
   fs.writeFileSync(`${base}.sarif`, JSON.stringify(toSarif(report), null, 2));
   fs.writeFileSync(`${base}.md`, toMarkdown(report));
@@ -199,6 +219,13 @@ async function main() {
       `Proxy: ${implementation.isProxy ? implementation.address : "no"}`,
   );
   console.log("Severity:", analysis.severityCounts);
+  if (bytecodeAnalysis) {
+    const fp = bytecodeAnalysis.fingerprint;
+    console.log(
+      `Compiler: ${fp.kind}${fp.version ? ` ${fp.version}` : " (version unknown)"}  ` +
+        `Compiler findings: ${bytecodeAnalysis.findings.length}`,
+    );
+  }
   if (analysis.findings.length > 0) {
     console.table(
       analysis.findings.map((f) => ({

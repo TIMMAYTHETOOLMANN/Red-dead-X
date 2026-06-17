@@ -47,6 +47,22 @@ graph TD
 ## Root cause
 <Missing signer check, missing PDA validation, incorrect math, etc.>
 
+## Breach genealogy
+<Historical lineage, if any, linking this target to a known-compromised entity.>
+- Lineage path: `<0xKnownBad>` → `<0xRelay>` → `<this target>`
+- Known-bad root: <incident name / source, e.g. "Ronin Bridge 2022">
+- Why it escalates risk: <e.g. shared admin key, reused proxy, inherited approval>
+- Source: `db/` historical-tracing store (known_bad_addresses / address_interactions)
+
+## Attack-path graph
+<Machine-readable graph showing how the enabler/compromised wallet reaches this
+seam. Paste the Cytoscape.js `elements` (nodes/edges) JSON emitted in the
+"Attack-path graph" section of the forensic report, or an exported image.>
+
+```json
+{ "nodes": [], "edges": [] }
+```
+
 ## Recommended fix
 <Specific constraint, check, invariant test, or accounting correction.>
 

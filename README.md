@@ -43,7 +43,8 @@ Everything lives in [`soex-premiumcvt-audit/`](./soex-premiumcvt-audit).
     1/2/3/4 analyzers; each reads a real `*_INPUT_PATH` JSON file (sample fixture when unset) and
     emits findings into the **same** unified SARIF + Markdown pipeline.
   - `npm run evm-recon` — read-only live EVM recon via the **thirdweb** SDK (resolves ABI +
-    proxy implementation, then runs the EVM hunting lanes).
+    proxy implementation, runs the EVM hunting lanes, and **fingerprints the deployed bytecode**
+    to infer the `solc`/`vyper` compiler version and flag known compiler-version bugs).
   - `targets/bugrap-programs.json` — the program registry (in-scope chains, bounty classes, contracts,
     payout bands) with a **scope-compliance gate** that refuses out-of-scope targets.
 - **thirdweb SDK integration** (TypeScript v5 + .NET — see `soex-premiumcvt-audit/docs/07-thirdweb-sdk.md`):

@@ -39,6 +39,36 @@ Findings carry `risk` (severity × confidence) **and** `payoutWeight` (USD midpo
 of the severity band, program-tunable), and are ranked by expected payout first —
 so the highest-value leads float to the top across the whole ecosystem.
 
+## Bytecode compiler fingerprint (`bytecode_fingerprint.ts`)
+
+`evm-recon` also lifts a **compiler fingerprint** out of the deployed runtime
+bytecode (the implementation's, behind a proxy) — even when the contract is
+*unverified* and has no source. It decodes the `solc`/`vyper` version from the
+CBOR metadata trailer and matches it against a curated database of
+compiler-version bugs, emitting candidate findings into the same unified stream:
+
+- **BC — compiler-fingerprint**: records the inferred toolchain (e.g. `solc 0.6.12`).
+- **BC — known-compiler-bug**: flags version-ranged compiler issues, e.g. pre-0.8.0
+  unchecked arithmetic, the 0.5.8–0.8.15 calldata-tuple re-encoding bug, and the
+  0.8.13–0.8.14 inline-assembly optimizer bug.
+
+This is the minimal first step of the plan's *Compiler-Specific Vulnerability
+Signatures*; it is fully offline and pure (no decompilation yet).
+
+## Ingestion source: RPC today, P2P "Forged Node" later
+
+`scripts/lib/chains.ts` now carries an optional `ingestion` descriptor
+(`rpc` | `p2p` | `hybrid`, default `rpc`) plus `ingestionSource(chain)` /
+`usesP2p(chain)` helpers. This lays the seam for the future out-of-process
+**Forged Node** P2P tier without changing today's thirdweb/RPC collectors.
+
+## Historical-tracing DB (`db/`)
+
+Schema-only scaffold (PostgreSQL + ClickHouse migrations) for breach-genealogy
+tracing — known-bad addresses and their interaction edges. No live wiring yet;
+lineage hits surface in the report via a finding's `genealogy` field (rendered as
+the **Breach genealogy paths** section and lineage edges in the **Attack-path graph**).
+
 ## Commands
 
 ```bash

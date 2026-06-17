@@ -16,6 +16,33 @@
 /** Virtual-machine family a network belongs to. Drives analyzer/SDK selection. */
 export type Vm = "evm" | "svm" | "btc" | "cosmos" | "other";
 
+/**
+ * How raw chain data is ingested for a network.
+ *
+ * - `rpc`    — query a standard JSON-RPC endpoint (today's thirdweb path). The
+ *              default for every chain so existing behaviour is unchanged.
+ * - `p2p`    — peer directly with the network (the future "Forged Node": devp2p
+ *              for EVM, native wire protocols for others) to read mempool/blocks
+ *              without a rate-limited RPC provider.
+ * - `hybrid` — peer for the firehose but fall back to RPC for point lookups.
+ */
+export type IngestionSource = "rpc" | "p2p" | "hybrid";
+
+/**
+ * Optional ingestion descriptor laying the seam for the "Forged Node" P2P tier.
+ * Purely declarative — no peer is dialled here. Collectors read `source` to pick
+ * a data path; a future out-of-process Forged Node service consumes `bootnodes`.
+ */
+export interface IngestionConfig {
+  /** Preferred ingestion path. Absent ⇒ treated as `rpc`. */
+  source: IngestionSource;
+  /**
+   * Bootstrap peers for the P2P path (enode/multiaddr/host:port strings). Unused
+   * by the offline analyzers; consumed only by the opt-in Forged Node service.
+   */
+  bootnodes?: string[];
+}
+
 export interface ChainInfo {
   /** Stable lower-case key used across the registry (e.g. "ethereum", "bsc"). */
   key: string;
@@ -43,6 +70,11 @@ export interface ChainInfo {
    * Forged Node bootstrap peers for sustained unrestricted P2P peering
    */
   p2pPeers?: string[];
+  /**
+   * Optional ingestion descriptor. Absent ⇒ standard RPC. Lets a chain opt into
+   * the future P2P "Forged Node" firehose without changing any collector today.
+   */
+  ingestion?: IngestionConfig;
 }
 
 /**
@@ -229,4 +261,19 @@ export function isP2PEnabled(chain: ChainInfo): boolean {
 /** Retrieve the bootstrap peer enode/multiaddr references for forged node connection */
 export function getBootstrapPeers(chain: ChainInfo): string[] {
   return chain.p2pPeers ?? [];
+}
+
+/**
+ * Resolve a chain's ingestion source. Defaults to `"rpc"` when the chain has no
+ * explicit `ingestion` descriptor, so today's thirdweb/RPC collectors keep
+ * working unchanged while P2P-enabled chains can opt into the Forged Node tier.
+ */
+export function ingestionSource(chain: ChainInfo): IngestionSource {
+  return chain.ingestion?.source ?? "rpc";
+}
+
+/** True when a chain is configured to use the P2P "Forged Node" path. */
+export function usesP2p(chain: ChainInfo): boolean {
+  const src = ingestionSource(chain);
+  return src === "p2p" || src === "hybrid";
 }

@@ -4,10 +4,12 @@ import {
   chainByChainId,
   chainByKey,
   evmChains,
+  ingestionSource,
   isEvm,
   resolveChain,
   isP2PEnabled,
   getBootstrapPeers,
+  usesP2p,
 } from "../scripts/lib/chains";
 
 test("chainByKey resolves known chains case-insensitively", () => {
@@ -48,4 +50,22 @@ test("isP2PEnabled and getBootstrapPeers support P2P fallback", () => {
   const peers = getBootstrapPeers(eth);
   assert.ok(peers.length > 0);
   assert.ok(peers[0].startsWith("enode://"));
+});
+
+test("ingestionSource defaults to rpc when no descriptor is set", () => {
+  assert.equal(ingestionSource(chainByKey("ethereum")!), "rpc");
+  assert.equal(usesP2p(chainByKey("ethereum")!), false);
+});
+
+test("ingestionSource honours an explicit p2p/hybrid descriptor", () => {
+  const p2p = {
+    ...chainByKey("ethereum")!,
+    ingestion: { source: "p2p" as const, bootnodes: ["enode://abc@1.2.3.4:30303"] },
+  };
+  assert.equal(ingestionSource(p2p), "p2p");
+  assert.equal(usesP2p(p2p), true);
+
+  const hybrid = { ...chainByKey("base")!, ingestion: { source: "hybrid" as const } };
+  assert.equal(ingestionSource(hybrid), "hybrid");
+  assert.equal(usesP2p(hybrid), true);
 });
