@@ -121,6 +121,50 @@ async function main() {
   const abi = normalizeAbi(abiRaw as unknown[]);
   const analysis = analyzeAbi(abi, payoutBands);
 
+  // --- read-only bytecode static scan (fingerprint compiler bugs) ----------
+  let bytecodeHex = "";
+  try {
+    const { getBytecode } = await import("thirdweb/contract");
+    bytecodeHex = await getBytecode(contract);
+  } catch {
+    // fallback or offline mock support
+  }
+  if (!bytecodeHex && process.env.EVM_BYTECODE) {
+    bytecodeHex = process.env.EVM_BYTECODE.trim();
+  }
+
+  const { scanEvmBytecode } = await import("./lib/bytecode_scanner");
+  const { payoutMidpoint } = await import("./lib/taxonomy");
+  const { riskScore } = await import("./lib/analyze");
+
+  const bytecodeFindings = scanEvmBytecode(bytecodeHex).map((bf) => {
+    const pWeight = payoutMidpoint(bf.severity, payoutBands);
+    return {
+      id: bf.id,
+      lane: "EB-upgradeability" as const, // Map to EVM upgradeability / compiler lane
+      severity: bf.severity,
+      confidence: bf.confidence,
+      risk: riskScore(bf.severity, bf.confidence),
+      payoutWeight: pWeight,
+      vulnTypeId: "smart-contract/access-control",
+      function: "compiler-metadata",
+      title: bf.title,
+      detail: bf.detail,
+      recommendation: bf.recommendation,
+    };
+  });
+
+  if (bytecodeFindings.length > 0) {
+    analysis.findings = [...analysis.findings, ...bytecodeFindings];
+    for (const f of bytecodeFindings) {
+      analysis.severityCounts[f.severity] = (analysis.severityCounts[f.severity] || 0) + 1;
+      analysis.laneCounts[f.lane] = (analysis.laneCounts[f.lane] || 0) + 1;
+      analysis.maxRisk = Math.max(analysis.maxRisk, f.risk);
+      analysis.totalPayoutWeight += f.payoutWeight;
+    }
+    analysis.findings.sort((a, b) => b.payoutWeight - a.payoutWeight || b.risk - a.risk);
+  }
+
   const target = {
     program: programKey || "(unscoped)",
     chain: chain.key,

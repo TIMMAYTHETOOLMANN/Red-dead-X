@@ -8,8 +8,10 @@ import {
   MatrixRow,
   Severity,
   SEVERITY_ORDER,
+  riskScore,
 } from "./lib/analyze";
 import { toSarif } from "./lib/report";
+import { scanSvmIdlMetadata } from "./lib/bytecode_scanner";
 
 /**
  * Deep static IDL analyzer (read-only, no chain access).
@@ -92,6 +94,29 @@ function main() {
   }
 
   const result = analyzeIdl(idl);
+
+  // Integrate SVM IDL compiler/framework fingerprint checks
+  const metadataFindings = scanSvmIdlMetadata(idl).map((bf) => ({
+    id: bf.id,
+    lane: "F-upgrade-admin" as const,
+    severity: bf.severity,
+    confidence: bf.confidence,
+    risk: riskScore(bf.severity, bf.confidence),
+    instruction: "compiler-metadata",
+    account: null,
+    title: bf.title,
+    detail: bf.detail,
+    recommendation: bf.recommendation,
+  }));
+
+  if (metadataFindings.length > 0) {
+    result.findings = [...result.findings, ...metadataFindings];
+    for (const f of metadataFindings) {
+      result.severityCounts[f.severity] = (result.severityCounts[f.severity] || 0) + 1;
+      result.laneCounts[f.lane] = (result.laneCounts[f.lane] || 0) + 1;
+      result.maxRisk = Math.max(result.maxRisk, f.risk);
+    }
+  }
 
   // Baseline suppression (enhancement): drop previously-accepted findings so CI
   // only surfaces *new* seams. The full result is still written for the record.
